@@ -1,14 +1,19 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { rankDirectoryMatches, type ShapeOptions, type ShapeResult, validateMatchPattern } from "./code-shape.ts";
+import {
+  outputChars,
+  rankDirectoryMatches,
+  rankSourceMatchFiles,
+  sourceMatchesFiles,
+  type ShapeOptions,
+  type ShapeResult,
+  type SourceMatch,
+  validateMatchPattern,
+} from "./code-shape.ts";
 import { shapeFile, UnshapableFileError } from "./file.ts";
 import { detectLanguage } from "./languages.ts";
 
-const DEFAULT_DIRECTORY_ITEMS = 200;
-const MAX_DOCS_PER_DIRECTORY = 40;
-const MAX_MATCHES_PER_DIRECTORY = 12;
-const MAX_DIRECTORY_FILES = 100;
-const DIRECTORY_BUDGET_MS = 5_000;
+const DIRECTORY_PARSE_BUDGET_MS = 10_000;
 const IGNORED_DIRECTORIES = new Set([
   ".git",
   ".next",
@@ -83,12 +88,6 @@ async function shapeDirectory(
   signal?: AbortSignal,
 ): Promise<DirectoryShapeResult> {
   if (options.line !== undefined) throw new Error("--line requires a file path");
-  if (options.docs && !options.symbol && options.match === undefined) {
-    throw new Error("docs on a folder requires an exact symbol or match");
-  }
-  if (options.params && !options.symbol && options.match === undefined) {
-    throw new Error("params on a folder requires an exact symbol or match");
-  }
   if (options.match !== undefined) await validateMatchPattern(options.match, signal);
   const patterns = splitGlobs(options.glob ?? "**/*");
   if (patterns.length === 0) throw new Error("glob must not be empty");
@@ -102,32 +101,39 @@ async function shapeDirectory(
     }
   }
 
-  const matches = [...paths].sort();
+  const candidatePaths = [...paths].sort();
   const files: ShapeResult[] = [];
   const notes: string[] = [];
-  const deadline = Date.now() + DIRECTORY_BUDGET_MS;
-  const detailed = options.docs || options.params;
-  const defaultItems = options.match !== undefined
-    ? MAX_MATCHES_PER_DIRECTORY
-    : detailed
-      ? MAX_DOCS_PER_DIRECTORY
-      : DEFAULT_DIRECTORY_ITEMS;
-  const maxItems = Math.max(
-    1,
-    Math.min(
-      options.maxItems ?? defaultItems,
-      options.match !== undefined ? MAX_MATCHES_PER_DIRECTORY : detailed ? MAX_DOCS_PER_DIRECTORY : 500,
-    ),
-  );
+  const maxOutput = outputChars(options);
   let shownCount = 0;
   let definitionCount = 0;
   let omittedCount = 0;
   let parseErrors = 0;
   let processedCount = 0;
+  let parseLimited = false;
+  let outputLimited = false;
+  let precomputedMatches: Map<string, SourceMatch[]> | undefined;
+  let pathsToProcess = candidatePaths;
 
-  for (const relativePath of matches.slice(0, MAX_DIRECTORY_FILES)) {
+  if (options.match !== undefined) {
+    const searched = await sourceMatchesFiles(directoryPath, candidatePaths, options.match, signal);
+    precomputedMatches = searched.files;
+    pathsToProcess = rankSourceMatchFiles(searched.files);
+  }
+
+  const deadline = Date.now() + DIRECTORY_PARSE_BUDGET_MS;
+  const header = `${displayPath} ${candidatePaths.length} files`;
+  let plainOutputChars = header.length + 1;
+  for (const relativePath of pathsToProcess) {
     if (signal?.aborted) throw new Error("shape was cancelled");
-    if (Date.now() > deadline || (options.match === undefined && shownCount >= maxItems)) break;
+    if (Date.now() > deadline) {
+      parseLimited = true;
+      break;
+    }
+    if (options.match === undefined && plainOutputChars >= maxOutput - "\n[more]".length) {
+      outputLimited = true;
+      break;
+    }
     processedCount++;
     try {
       const result = await shapeFile(
@@ -138,35 +144,59 @@ async function shapeDirectory(
           docs: options.docs,
           params: options.params,
           depth: options.depth ?? 2,
-          maxItems: options.match !== undefined ? maxItems : Math.min(40, maxItems - shownCount),
+          maxOutput: options.match !== undefined
+            ? maxOutput
+            : Math.max(80, maxOutput - plainOutputChars - "\n[more]".length),
         },
         signal,
         relativePath,
+        precomputedMatches?.get(relativePath),
       );
       definitionCount += result.definitionCount;
       omittedCount += result.omittedCount;
       parseErrors += result.parseErrors;
       if (result.shownCount > 0 || (options.match === undefined && result.parseErrors > 0)) {
-        files.push(result);
-        shownCount += result.shownCount;
+        if (options.match !== undefined || plainOutputChars + result.text.length + 1 <= maxOutput - "\n[more]".length) {
+          files.push(result);
+          shownCount += result.shownCount;
+          if (options.match === undefined) plainOutputChars += result.text.length + 1;
+        } else {
+          outputLimited = true;
+          break;
+        }
       }
     } catch (error) {
-      if (error instanceof UnshapableFileError) notes.push(`${relativePath} [${error.reason}]`);
-      else throw error;
+      if (error instanceof UnshapableFileError) {
+        if (options.match !== undefined) {
+          parseLimited = true;
+        } else {
+          const note = `${relativePath} [${error.reason}]`;
+          if (plainOutputChars + note.length + 1 <= maxOutput - "\n[more]".length) {
+            notes.push(note);
+            plainOutputChars += note.length + 1;
+          } else {
+            outputLimited = true;
+            break;
+          }
+        }
+      } else if (error instanceof Error && error.message.includes("parse budget exceeded")) {
+        parseLimited = true;
+      } else throw error;
     }
   }
 
-  const omittedFileCount = Math.max(0, matches.length - processedCount);
+  const omittedFileCount = options.match !== undefined
+    ? Math.max(0, pathsToProcess.length - processedCount)
+    : Math.max(0, candidatePaths.length - processedCount);
   if (options.match !== undefined) {
-    const ranked = rankDirectoryMatches(files, maxItems);
+    const incomplete = parseLimited || files.some((file) => file.queryLimited);
+    const suffix = incomplete ? "\n[incomplete]" : "";
+    const ranked = rankDirectoryMatches(files, Math.max(0, maxOutput - suffix.length));
     const body = ranked.lines.join("\n") || "[no match]";
-    const ownerLimit = ranked.omittedMatches ? `\n[+${ranked.omittedMatches} owners]` : "";
-    const fileLimit = omittedFileCount ? `\n[+${omittedFileCount} files]` : "";
-    const errors = parseErrors ? `\n[errors=${parseErrors}]` : "";
-    const incomplete = files.some((file) => file.queryLimited) ? "\n[incomplete]" : "";
+    const ownerLimit = ranked.omittedMatches ? "\n[more]" : "";
     return {
       path: displayPath,
-      fileCount: matches.length,
+      fileCount: candidatePaths.length,
       shownFileCount: ranked.shownFileCount,
       omittedFileCount,
       definitionCount,
@@ -177,15 +207,16 @@ async function shapeDirectory(
       matchCount: ranked.matchCount,
       omittedMatchCount: ranked.omittedMatches,
       files: ranked.files,
-      text: `${body}${ownerLimit}${fileLimit}${errors}${incomplete}`,
+      text: `${body}${ownerLimit}${suffix}`,
     };
   }
   const body = [...files.map((file) => file.text), ...notes].join("\n");
   const empty = options.symbol ? "[no match]" : "[no shape]";
-  const limit = omittedFileCount ? `\n[+${omittedFileCount} files]` : "";
+  const limit = outputLimited ? "\n[more]" : "";
+  const incomplete = parseLimited ? "\n[incomplete]" : "";
   return {
     path: displayPath,
-    fileCount: matches.length,
+    fileCount: candidatePaths.length,
     shownFileCount: files.length,
     omittedFileCount,
     definitionCount,
@@ -193,7 +224,7 @@ async function shapeDirectory(
     omittedCount,
     parseErrors,
     files,
-    text: `${displayPath} ${matches.length} files\n${body || empty}${limit}`,
+    text: `${header}\n${body || empty}${limit}${incomplete}`,
   };
 }
 

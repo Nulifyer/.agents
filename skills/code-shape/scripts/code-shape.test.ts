@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shapeSource, shapeTarget } from "./lib/index.ts";
+import { DEFAULT_OUTPUT_CHARS, MAX_FILE_BYTES, shapeBytes, shapeSource, shapeTarget } from "./lib/index.ts";
 
 const roots: string[] = [];
 
@@ -103,6 +103,16 @@ export const double = (value: number): number => value * 2;
     }
   });
 
+  test("names qualified C++ call operators instead of parameter types", async () => {
+    const result = await shapeSource(
+      "worker.cpp",
+      "void Worker::operator()(Context& context) const { context.run(); }\n",
+      { params: true },
+    );
+    expect(result.text).toContain("fn Worker.operator()(context)");
+    expect(result.text).not.toContain("fn Context");
+  });
+
   test("extracts useful shapes for functional and dynamic languages", async () => {
     const cases = [
       ["sample.dart", "class Box { int run(int x) => x; }", "dart", "  fn run"],
@@ -155,17 +165,22 @@ export const double = (value: number): number => value * 2;
     expect((await shapeSource("box.h", "typedef struct Box { int value; } Box;\n")).language).toBe("c");
   });
 
-  test("reports recovered syntax errors and bounds output", async () => {
+  test("reports recovered syntax errors and bounds output by characters", async () => {
     const malformed = await shapeSource("broken.py", "def broken(:\n    pass\n");
     expect(malformed.parseErrors).toBeGreaterThan(0);
     expect(malformed.text).toContain("errors=");
 
-    const limited = await shapeSource("many.ts", "function a() {}\nfunction b() {}\nfunction c() {}\n", {
-      maxItems: 2,
-    });
-    expect(limited.shownCount).toBe(2);
-    expect(limited.omittedCount).toBe(1);
-    expect(limited.text).toContain("[+1 omitted]");
+    const source = Array.from({ length: 30 }, (_, index) => `function job${index}() {}`).join("\n");
+    const limited = await shapeSource("many.ts", source, { maxOutput: 120 });
+    expect(limited.text.length).toBeLessThanOrEqual(120);
+    expect(limited.shownCount).toBeLessThan(30);
+    expect(limited.omittedCount).toBeGreaterThan(0);
+    expect(limited.text).toContain("[more]");
+
+    const defaultLimited = await shapeSource("default.ts", source.repeat(4));
+    expect(DEFAULT_OUTPUT_CHARS).toBe(800);
+    expect(defaultLimited.text.length).toBeLessThanOrEqual(DEFAULT_OUTPUT_CHARS);
+    expect(defaultLimited.text).toContain("[more]");
   });
 
   test("rejects unsupported files and conflicting focus", async () => {
@@ -210,6 +225,94 @@ export const double = (value: number): number => value * 2;
     const broken = await shapeSource("broken.js", "class A{m( { return 1 } function ok(){}");
     expect(broken.parseErrors).toBeGreaterThan(0);
     expect(broken.text).toContain("fn ok");
+  });
+
+  test("uses byte ranges for a dominant minified line with a source map comment", async () => {
+    const source = `function send(){return "needle"}${" ".repeat(5_000)}\n//# sourceMappingURL=bundle.js.map\n`;
+    const result = await shapeSource("bundle.js", source, { match: "needle" });
+
+    expect(result.text).toContain("fn send [b0-");
+    expect(result.text).toContain(" @b");
+    expect(result.text).not.toContain("[1]");
+  });
+
+  test("names assigned and anonymous callback owners only in match mode", async () => {
+    const source = `const view = <button onClick={() => "Send message"} />;
+const config = { handleSubmit: event => send(event) };
+controller.queue = () => "Queued submit";
+items.map(item => item.label === "Mapped send");
+`;
+    const result = await shapeSource("callbacks.tsx", source, {
+      match: "send message|handleSubmit|queued submit|mapped send",
+      params: true,
+    });
+
+    expect(result.text).toContain("fn onClick()");
+    expect(result.text).toContain("fn handleSubmit(event)");
+    expect(result.text).toContain("fn controller.queue()");
+    expect(result.text).toContain("fn items.map(item)");
+    expect(result.text).not.toContain("Send message");
+    expect(result.text).not.toContain("Queued submit");
+
+    const plain = await shapeSource("callbacks.tsx", source);
+    expect(plain.text).not.toContain("fn onClick");
+    expect(plain.text).not.toContain("fn controller.queue");
+  });
+
+  test("uses the assignment name for callbacks passed to wrapper calls", async () => {
+    const result = await shapeSource(
+      "commands.ts",
+      'const appCommands = createMemo(() => [{ title: "Approve permission" }]);\n',
+      { match: "approve permission", params: true },
+    );
+
+    expect(result.text).toContain("fn appCommands()");
+    expect(result.text).not.toContain("fn createMemo");
+  });
+
+  test("searches oversized files through bounded match windows", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-large-match-"));
+    roots.push(root);
+    const padding = "// padding padding padding padding\n".repeat(Math.ceil(MAX_FILE_BYTES / 32));
+    writeFileSync(
+      join(root, "z-bundle.js"),
+      `${padding}\nfunction sendMessage(payload) { return "Send message now"; }\n`,
+    );
+    writeFileSync(join(root, "a-small.js"), 'function generic() { return "send"; }\n');
+
+    const file = await shapeTarget(join(root, "z-bundle.js"), {
+      match: "send message now|send",
+      params: true,
+    });
+    expect(file.text).toContain("fn sendMessage(payload) [b");
+    expect(file.text).toContain(" @b");
+    expect(file.text).toContain("[incomplete]");
+    expect(file.text).not.toContain("Send message now");
+
+    const directory = await shapeTarget(
+      root,
+      { glob: "*.js", match: "send message now|send", params: true },
+      undefined,
+      "src",
+    );
+    expect(directory.text.startsWith("z-bundle.js\n  fn sendMessage(payload) [b")).toBe(true);
+    expect(directory.text).toContain("a-small.js");
+
+    const minifiedPath = join(root, "min-bundle.js");
+    writeFileSync(
+      minifiedPath,
+      `${" ".repeat(MAX_FILE_BYTES + 1)}function minifiedSend(){return "Minified needle"}\n//# sourceMappingURL=min.js.map\n`,
+    );
+    const minified = await shapeTarget(minifiedPath, { match: "minified needle" });
+    expect(minified.text).toContain("fn minifiedSend [b");
+    expect(minified.text).toContain(" @b");
+
+    const stdin = await shapeBytes(
+      "remote.js",
+      Buffer.from(`${" ".repeat(MAX_FILE_BYTES + 1)}const submit = () => "Send message now";\n`),
+      { match: "send message now", params: true },
+    );
+    expect(stdin.text).toContain("fn submit() [b");
   });
 
   test("shapes a folder with recursive standard globs and comma-list globs", async () => {
@@ -299,6 +402,49 @@ export const double = (value: number): number => value * 2;
     expect(matchStdout).not.toContain("needle");
   });
 
+  test("accepts short discovery and output flags", async () => {
+    const proc = Bun.spawn(
+      [process.execPath, join(import.meta.dir, "code-shape.ts"), "-", "remote.ts", "-m", "send message", "-p", "-o", "120"],
+      {
+        stdin: Buffer.from('const submit = (event) => "Send message";\n'),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout.length).toBeLessThanOrEqual(120);
+    expect(stdout).toContain("fn submit(event)");
+  });
+
+  test("keeps JSON output inside the same budget", async () => {
+    const proc = Bun.spawn(
+      [process.execPath, join(import.meta.dir, "code-shape.ts"), "-", "remote.ts", "-m", "needle", "-o", "120", "-j"],
+      {
+        stdin: Buffer.from(
+          Array.from({ length: 20 }, (_, index) => `function job${index}() { return "needle"; }`).join("\n"),
+        ),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout.length).toBeLessThanOrEqual(120);
+    expect(typeof JSON.parse(stdout)).toBe("string");
+    expect(stdout).not.toContain("definitionCount");
+  });
+
   test("maps case-insensitive regex alternatives to owning symbols without source", async () => {
     const source = `class Cards {
   render(card: Card) {
@@ -353,18 +499,17 @@ export const double = (value: number): number => value * 2;
     ).rejects.toThrow("only one of symbol, line, or match");
   });
 
-  test("bounds regex owners and scans a folder with one expression", async () => {
+  test("budgets regex owners and scans a folder with one expression", async () => {
     const source = Array.from(
       { length: 14 },
       (_, index) => `function job${index}() { return "needle ${index}"; }`,
     ).join("\n");
-    const bounded = await shapeSource("jobs.js", source, { match: "needle" });
-    expect(bounded.shownCount).toBe(12);
+    const bounded = await shapeSource("jobs.js", source, { match: "needle", maxOutput: 120 });
+    expect(bounded.text.length).toBeLessThanOrEqual(120);
+    expect(bounded.shownCount).toBeLessThan(14);
     expect(bounded.matchCount).toBe(14);
-    expect(bounded.omittedMatchCount).toBe(2);
-    expect(bounded.text).toContain("  fn job11 [12]");
-    expect(bounded.text).toContain("[+2 owners]");
-    expect(bounded.text).not.toContain("job12");
+    expect(bounded.omittedMatchCount).toBeGreaterThan(0);
+    expect(bounded.text).toContain("[more]");
 
     const root = mkdtempSync(join(tmpdir(), "code-shape-match-dir-"));
     roots.push(root);
@@ -413,11 +558,166 @@ class Permissions {
     );
     writeFileSync(join(root, "z-exact.ts"), 'function exact() { return "read path gates"; }\n');
 
-    const directory = await shapeTarget(root, { glob: "*.ts", match: "read path gates|shape" }, undefined, "src");
+    const directory = await shapeTarget(
+      root,
+      { glob: "*.ts", match: "read path gates|shape", maxOutput: 150 },
+      undefined,
+      "src",
+    );
     expect(directory.text.startsWith("z-exact.ts\n  fn exact [1]\n")).toBe(true);
     expect(directory.text).toContain("a-generic.ts");
-    expect(directory.text).toContain("[+1 owners]");
+    expect(directory.text).toContain("[more]");
+    expect(directory.text.length).toBeLessThanOrEqual(150);
     expect(directory.text).not.toContain("generic11");
+  });
+
+  test("searches and parses every matching folder candidate without count caps", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-prefilter-dir-"));
+    roots.push(root);
+    for (let index = 0; index < 120; index++) {
+      writeFileSync(join(root, `a-no-match-${index.toString().padStart(3, "0")}.js`), "function idle() {}\n");
+    }
+    for (let index = 0; index < 105; index++) {
+      writeFileSync(
+        join(root, `m-generic-${index.toString().padStart(3, "0")}.js`),
+        `function generic${index}() { return "shape"; }\n`,
+      );
+    }
+    writeFileSync(join(root, "z-exact.js"), 'function exact() { return "read path gates"; }\n');
+
+    const result = await shapeTarget(root, { glob: "*.js", match: "read path gates|shape" }, undefined, "src");
+
+    expect("fileCount" in result).toBe(true);
+    if (!("fileCount" in result)) throw new Error("expected directory result");
+    expect(result.fileCount).toBe(226);
+    expect(result.omittedFileCount).toBe(0);
+    expect(result.text.startsWith("z-exact.js\n  fn exact [1]\n")).toBe(true);
+    expect(result.text).not.toContain("a-no-match");
+  });
+
+  test("searches later rg batches and paths with spaces and Unicode", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-batches-"));
+    roots.push(root);
+    for (let index = 0; index < 405; index++) {
+      writeFileSync(join(root, `a-idle-${index.toString().padStart(3, "0")}.js`), "function idle() {}\n");
+    }
+    writeFileSync(join(root, "z café exact.js"), 'function exact() { return "unique second batch phrase"; }\n');
+
+    const result = await shapeTarget(
+      root,
+      { glob: "*.js", match: "unique second batch phrase|missing fallback" },
+      undefined,
+      "src",
+    );
+
+    expect("fileCount" in result).toBe(true);
+    if (!("fileCount" in result)) throw new Error("expected directory result");
+    expect(result.fileCount).toBe(406);
+    expect(result.omittedFileCount).toBe(0);
+    expect(result.text).toContain("z café exact.js\n  fn exact [1]");
+    expect(result.text).not.toContain("[incomplete]");
+  });
+
+  test("keeps regex alternative coverage inside a small output budget", async () => {
+    const common = Array.from(
+      { length: 30 },
+      (_, index) => `function common${index}() { return "long common phrase"; }`,
+    ).join("\n");
+    const result = await shapeSource(
+      "coverage.js",
+      `${common}\nfunction rareOwner() { return "rare"; }\n`,
+      { match: "long common phrase|rare", maxOutput: 180 },
+    );
+
+    expect(result.text.length).toBeLessThanOrEqual(180);
+    expect(result.text).toContain("fn common0");
+    expect(result.text).toContain("fn rareOwner");
+    expect(result.text).toContain("[more]");
+  });
+
+  test("ranks implementation owners above localization data", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-path-rank-"));
+    roots.push(root);
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, "locales"));
+    writeFileSync(join(root, "src", "prompt.tsx"), 'const onSubmit = () => "Send message";\n');
+    writeFileSync(join(root, "locales", "en.json"), '{"send_message":"Send message"}\n');
+
+    const result = await shapeTarget(root, { match: "send message", maxOutput: 120 }, undefined, "project");
+    expect(result.text.startsWith("src/prompt.tsx\n  fn onSubmit [1]")).toBe(true);
+  });
+
+  test("ranks source implementations above generated clients", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-generated-rank-"));
+    roots.push(root);
+    mkdirSync(join(root, "packages", "app", "src"), { recursive: true });
+    mkdirSync(join(root, "packages", "sdk", "src", "gen"), { recursive: true });
+    writeFileSync(
+      join(root, "packages", "sdk", "src", "gen", "sdk.gen.ts"),
+      'class Session { abort() { return "generated session abort endpoint"; } }\n',
+    );
+    writeFileSync(
+      join(root, "packages", "app", "src", "submit.ts"),
+      'function abort() { return "abort session"; }\n',
+    );
+
+    const result = await shapeTarget(
+      root,
+      { match: "generated session abort endpoint|abort session|abort", maxOutput: 240 },
+      undefined,
+      "project",
+    );
+    expect(result.text.startsWith("packages/app/src/submit.ts\n  fn abort [1]")).toBe(true);
+  });
+
+  test("ranks source implementations above mocks and test files", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-mock-rank-"));
+    roots.push(root);
+    mkdirSync(join(root, "src"));
+    mkdirSync(join(root, "mocks"));
+    writeFileSync(join(root, "src", "transfer.ts"), 'function transfer() { return "approve update"; }\n');
+    writeFileSync(join(root, "mocks", "TransferMock.ts"), 'function transfer() { return "approve update"; }\n');
+    writeFileSync(join(root, "transfer.test.ts"), 'function transfer() { return "approve update"; }\n');
+
+    const result = await shapeTarget(
+      root,
+      { match: "transfer|approve|update", maxOutput: 240 },
+      undefined,
+      "project",
+    );
+    expect(result.text.startsWith("src/transfer.ts\n  fn transfer [1]")).toBe(true);
+  });
+
+  test("ranks files covering more regex alternatives first", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-coverage-rank-"));
+    roots.push(root);
+    writeFileSync(join(root, "a-single.ts"), 'function single() { return "alpha"; }\n');
+    writeFileSync(join(root, "z-covered.ts"), 'function covered() { return "alpha beta gamma"; }\n');
+
+    const result = await shapeTarget(
+      root,
+      { glob: "*.ts", match: "alpha|beta|gamma", maxOutput: 180 },
+      undefined,
+      "project",
+    );
+    expect(result.text.startsWith("z-covered.ts\n  fn covered [1]")).toBe(true);
+  });
+
+  test("keeps smaller-budget match branches when output budget grows", async () => {
+    const root = mkdtempSync(join(tmpdir(), "code-shape-monotonic-"));
+    roots.push(root);
+    writeFileSync(join(root, "a-top.js"), 'function top() { return "top exact phrase"; }\n');
+    writeFileSync(
+      join(root, "b-deep.js"),
+      'class VeryLongPermissionControllerName { deeplyNestedPermissionHandler() { return "rare branch"; } }\n',
+    );
+    writeFileSync(join(root, "c-cheap.js"), 'function cheap() { return "shape"; }\n');
+
+    const match = "top exact phrase|rare branch|shape";
+    const small = await shapeTarget(root, { glob: "*.js", match, maxOutput: 150 }, undefined, "src");
+    const large = await shapeTarget(root, { glob: "*.js", match, maxOutput: 300 }, undefined, "src");
+    const smallLines = small.text.split("\n").filter((line) => line !== "[more]");
+    for (const line of smallLines) expect(large.text).toContain(line);
   });
 
   test("includes normalized parameter names only when requested", async () => {
@@ -474,6 +774,17 @@ class Permissions {
     }
   });
 
+  test("distinguishes Swift extensions from original type declarations", async () => {
+    const result = await shapeSource(
+      "Command.swift",
+      "protocol Command {}\nextension Command {\n  func run() {}\n}\n",
+    );
+
+    expect(result.text).toContain("type Command [1]");
+    expect(result.text).toContain("impl Command [2-4]");
+    expect(result.text).toContain("  fn run [3]");
+  });
+
   test("bounds parameter names and folder usage", async () => {
     const names = Array.from({ length: 15 }, (_, index) => `arg${index}`).join(", ");
     const result = await shapeSource("worker.js", `function run(${names}) {}`, { params: true });
@@ -484,7 +795,8 @@ class Permissions {
     const root = mkdtempSync(join(tmpdir(), "code-shape-params-dir-"));
     roots.push(root);
     writeFileSync(join(root, "worker.ts"), "function run(input: string) {}\n");
-    expect(shapeTarget(root, { params: true })).rejects.toThrow("requires an exact symbol");
+    const folder = await shapeTarget(root, { params: true }, undefined, "src");
+    expect(folder.text).toContain("fn run(input)");
     const focused = await shapeTarget(root, { params: true, symbol: "run" }, undefined, "src");
     expect(focused.text).toContain("fn run(input) [1]");
   });
@@ -538,17 +850,19 @@ export class Worker {
     }
   });
 
-  test("bounds documentation output and folder usage", async () => {
+  test("budgets documentation output and allows folder usage", async () => {
     const source = Array.from({ length: 42 }, (_, index) => `/** Job ${index}. */\nfunction job${index}() {}`).join("\n");
-    const result = await shapeSource("jobs.js", source, { docs: true });
-    expect(result.docCount).toBe(40);
-    expect(result.omittedDocCount).toBe(2);
-    expect(result.text).toContain("[+2 docs omitted]");
+    const result = await shapeSource("jobs.js", source, { docs: true, maxOutput: 400 });
+    expect(result.text.length).toBeLessThanOrEqual(400);
+    expect(result.docCount).toBeLessThan(42);
+    expect(result.omittedDocCount).toBeGreaterThan(0);
+    expect(result.text).toContain("[more]");
 
     const root = mkdtempSync(join(tmpdir(), "code-shape-docs-dir-"));
     roots.push(root);
     writeFileSync(join(root, "worker.ts"), "/** Worker. */\nclass Worker {}\n");
-    expect(shapeTarget(root, { docs: true })).rejects.toThrow("requires an exact symbol");
+    const folder = await shapeTarget(root, { docs: true }, undefined, "src");
+    expect(folder.text).toContain("type Worker [2] | Worker.");
     const focused = await shapeTarget(root, { docs: true, symbol: "Worker" }, undefined, "src");
     expect(focused.text).toContain("type Worker [2] | Worker.");
   });

@@ -1,4 +1,6 @@
 export {
+  DEFAULT_OUTPUT_CHARS,
+  MAX_OUTPUT_CHARS,
   shapeSource,
   type CodeSymbol,
   type ShapeKind,

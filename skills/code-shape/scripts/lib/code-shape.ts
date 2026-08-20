@@ -1,14 +1,13 @@
 import { type Node as SyntaxNode, Parser, Query } from "web-tree-sitter";
 import { detectLanguage, loadShapeLanguage, supportedLanguages } from "./languages.ts";
 
-const DEFAULT_MAX_ITEMS = 200;
-const DEFAULT_MATCH_ITEMS = 12;
-const MAX_DOCS = 40;
+export const DEFAULT_OUTPUT_CHARS = 800;
+export const MAX_OUTPUT_CHARS = 100_000;
 const MAX_DOC_CHARS = 200;
 const MAX_MATCH_PATTERN_CHARS = 500;
-const MAX_SOURCE_MATCHES = 2_000;
+const RG_BATCH_FILES = 400;
 const MAX_PARAMETERS_PER_SYMBOL = 12;
-const MAX_EXTRACTED_ITEMS = 2_000;
+const MAX_QUERY_CAPTURES = 100_000;
 const PARSE_BUDGET_MS = 2_000;
 
 type SymbolKind =
@@ -121,9 +120,18 @@ export type ShapeOptions = {
   line?: number;
   match?: string;
   depth?: number;
-  maxItems?: number;
+  maxOutput?: number;
   docs?: boolean;
   params?: boolean;
+};
+
+export type ShapeSourceContext = {
+  byteBase: number;
+  lineBase: number;
+  matches: SourceMatch[];
+  fullLineCount?: number;
+  forceByteRanges?: boolean;
+  incomplete?: boolean;
 };
 
 function logicalLineCount(source: string): number {
@@ -132,10 +140,26 @@ function logicalLineCount(source: string): number {
   return newlines + (source.endsWith("\n") ? 0 : 1);
 }
 
-type SourceMatch = {
+function shouldUseByteRanges(source: string): boolean {
+  const bytes = Buffer.from(source);
+  if (bytes.byteLength < 200) return false;
+  let longest = 0;
+  let lineStart = 0;
+  for (let index = 0; index < bytes.byteLength; index++) {
+    if (bytes[index] !== 0x0a) continue;
+    longest = Math.max(longest, index - lineStart);
+    lineStart = index + 1;
+  }
+  longest = Math.max(longest, bytes.byteLength - lineStart);
+  return longest === bytes.byteLength || (longest >= 4_096 && longest / bytes.byteLength >= 0.8);
+}
+
+export type SourceMatch = {
   startIndex: number;
   length: number;
   line: number;
+  text?: string;
+  variants?: number[];
 };
 
 type RipgrepMatch = {
@@ -143,23 +167,91 @@ type RipgrepMatch = {
   data: {
     absolute_offset: number;
     line_number: number;
-    submatches: Array<{ start: number; end: number }>;
+    path?: { text?: string };
+    submatches: Array<{ start: number; end: number; match?: { text?: string } }>;
   };
 };
 
-async function sourceMatches(source: string, pattern: string, signal?: AbortSignal): Promise<SourceMatch[]> {
+export type DirectorySourceMatches = {
+  files: Map<string, SourceMatch[]>;
+};
+
+function validateMatch(pattern: string, signal?: AbortSignal): void {
   if (!pattern) throw new Error("--match requires a regex");
   if (pattern.length > MAX_MATCH_PATTERN_CHARS) {
     throw new Error(`--match regex exceeds ${MAX_MATCH_PATTERN_CHARS} characters`);
   }
   if (signal?.aborted) throw new Error("shape was cancelled");
+}
 
+function splitRegexAlternatives(pattern: string): string[] {
+  const alternatives: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let inClass = false;
+  let escaped = false;
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === "[" && !inClass) inClass = true;
+    else if (character === "]" && inClass) inClass = false;
+    else if (!inClass && character === "(") depth++;
+    else if (!inClass && character === ")") depth = Math.max(0, depth - 1);
+    else if (!inClass && depth === 0 && character === "|") {
+      alternatives.push(pattern.slice(start, index));
+      start = index + 1;
+    }
+  }
+  alternatives.push(pattern.slice(start));
+  const values = alternatives.map((value) => value.trim()).filter(Boolean);
+  return values.length > 1 ? values : [pattern];
+}
+
+function variantClassifier(alternatives: string[]): (text: string | undefined) => number[] {
+  const expressions = alternatives.map((alternative) => {
+    try {
+      return new RegExp(alternative, "iu");
+    } catch {
+      return undefined;
+    }
+  });
+  return (text) => {
+    if (text === undefined) return [0];
+    const variants = expressions.flatMap((expression, index) => expression?.test(text) ? [index] : []);
+    return variants.length ? variants : [0];
+  };
+}
+
+async function* ripgrepEvents(
+  args: string[],
+  pattern: string,
+  signal?: AbortSignal,
+  stdin?: Buffer,
+  cwd?: string,
+): AsyncGenerator<RipgrepMatch> {
+  validateMatch(pattern, signal);
   const process = (() => {
     try {
       return Bun.spawn(
-        ["rg", "--json", "--ignore-case", "--max-count", String(MAX_SOURCE_MATCHES), "-e", pattern, "-"],
+        [
+          "rg",
+          "--json",
+          "--only-matching",
+          "--ignore-case",
+          "-e",
+          pattern,
+          ...args,
+        ],
         {
-          stdin: Buffer.from(source),
+          ...(stdin ? { stdin } : {}),
+          ...(cwd ? { cwd } : {}),
           stdout: "pipe",
           stderr: "pipe",
           signal,
@@ -170,13 +262,33 @@ async function sourceMatches(source: string, pattern: string, signal?: AbortSign
     }
   })();
 
-  const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
-  ]);
+  const stderrPromise = new Response(process.stderr).text();
+  const reader = process.stdout.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+    let newline = pending.indexOf("\n");
+    while (newline >= 0) {
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      if (line) {
+        const event = JSON.parse(line) as { type: string } | RipgrepMatch;
+        if (event.type === "match") yield event as RipgrepMatch;
+      }
+      newline = pending.indexOf("\n");
+    }
+  }
+  pending += decoder.decode();
+  if (pending) {
+    const event = JSON.parse(pending) as { type: string } | RipgrepMatch;
+    if (event.type === "match") yield event as RipgrepMatch;
+  }
+  const [exitCode, stderr] = await Promise.all([process.exited, stderrPromise]);
   if (signal?.aborted) throw new Error("shape was cancelled");
-  if (exitCode === 1) return [];
+  if (exitCode === 1) return;
   if (exitCode !== 0) {
     const reason = stderr
       .trim()
@@ -185,23 +297,116 @@ async function sourceMatches(source: string, pattern: string, signal?: AbortSign
       ?.replace(/^error:\s*/, "");
     throw new Error(`Invalid --match regex${reason ? `: ${reason}` : ""}`);
   }
+}
 
-  const matches: SourceMatch[] = [];
-  for (const line of stdout.split("\n")) {
-    if (!line || matches.length >= MAX_SOURCE_MATCHES) break;
-    const event = JSON.parse(line) as { type: string } | RipgrepMatch;
-    if (event.type !== "match") continue;
-    const match = event as RipgrepMatch;
+async function ripgrepMatches(
+  args: string[],
+  pattern: string,
+  signal?: AbortSignal,
+  stdin?: Buffer,
+): Promise<SourceMatch[]> {
+  const matches = new Map<string, SourceMatch>();
+  const classify = variantClassifier(splitRegexAlternatives(pattern));
+  for await (const match of ripgrepEvents(args, pattern, signal, stdin)) {
     for (const submatch of match.data.submatches) {
-      matches.push({
-        startIndex: match.data.absolute_offset + submatch.start,
-        length: submatch.end - submatch.start,
+      const startIndex = match.data.absolute_offset + submatch.start;
+      const length = submatch.end - submatch.start;
+      const key = `${startIndex}:${length}`;
+      const text = submatch.match?.text;
+      const existing = matches.get(key);
+      if (existing) {
+        existing.variants = [...new Set([...(existing.variants ?? []), ...classify(text)])];
+        continue;
+      }
+      matches.set(key, {
+        startIndex,
+        length,
         line: match.data.line_number,
+        text,
+        variants: classify(text),
       });
-      if (matches.length >= MAX_SOURCE_MATCHES) break;
     }
   }
-  return matches;
+  return [...matches.values()];
+}
+
+export async function sourceMatchesFiles(
+  directoryPath: string,
+  paths: string[],
+  pattern: string,
+  signal?: AbortSignal,
+): Promise<DirectorySourceMatches> {
+  validateMatch(pattern, signal);
+  const files = new Map<string, SourceMatch[]>();
+  const matchIndex = new Map<string, Map<string, SourceMatch>>();
+  const alternatives = splitRegexAlternatives(pattern);
+  const classify = variantClassifier(alternatives);
+  for (let start = 0; start < paths.length; start += RG_BATCH_FILES) {
+    const batch = paths.slice(start, start + RG_BATCH_FILES);
+    for await (const result of ripgrepEvents(["--", ...batch], pattern, signal, undefined, directoryPath)) {
+      const path = result.data.path?.text?.replaceAll("\\", "/").replace(/^\.\/+/, "");
+      if (!path) continue;
+      let matches = files.get(path);
+      if (!matches) {
+        matches = [];
+        files.set(path, matches);
+        matchIndex.set(path, new Map());
+      }
+      const indexed = matchIndex.get(path) as Map<string, SourceMatch>;
+      for (const submatch of result.data.submatches) {
+        const startIndex = result.data.absolute_offset + submatch.start;
+        const length = submatch.end - submatch.start;
+        const key = `${startIndex}:${length}`;
+        const text = submatch.match?.text;
+        const variants = classify(text);
+        const existing = indexed.get(key);
+        if (existing) {
+          existing.variants = [...new Set([...(existing.variants ?? []), ...variants])];
+          continue;
+        }
+        const sourceMatch = { startIndex, length, line: result.data.line_number, text, variants };
+        matches.push(sourceMatch);
+        indexed.set(key, sourceMatch);
+      }
+    }
+  }
+  return { files };
+}
+
+export function rankSourceMatchFiles(files: Map<string, SourceMatch[]>): string[] {
+  return [...files]
+    .sort(([leftPath, leftMatches], [rightPath, rightMatches]) => {
+      const leftSpan = Math.max(...leftMatches.map((match) => match.length));
+      const rightSpan = Math.max(...rightMatches.map((match) => match.length));
+      const leftVariants = new Set(leftMatches.flatMap((match) => match.variants ?? [0])).size;
+      const rightVariants = new Set(rightMatches.flatMap((match) => match.variants ?? [0])).size;
+      return rightVariants - leftVariants ||
+        pathScore(rightPath) - pathScore(leftPath) ||
+        rightSpan - leftSpan ||
+        rightMatches.length - leftMatches.length ||
+        leftPath.localeCompare(rightPath);
+    })
+    .map(([path]) => path);
+}
+
+async function sourceMatches(source: string, pattern: string, signal?: AbortSignal): Promise<SourceMatch[]> {
+  return ripgrepMatches(["-"], pattern, signal, Buffer.from(source));
+}
+
+export async function sourceMatchesBytes(
+  bytes: Buffer,
+  pattern: string,
+  signal?: AbortSignal,
+): Promise<SourceMatch[]> {
+  return ripgrepMatches(["-"], pattern, signal, bytes);
+}
+
+export async function sourceMatchesFile(
+  filePath: string,
+  pattern: string,
+  signal?: AbortSignal,
+): Promise<SourceMatch[]> {
+  return ripgrepMatches(["--", filePath], pattern, signal);
 }
 
 export async function validateMatchPattern(pattern: string, signal?: AbortSignal): Promise<void> {
@@ -521,6 +726,10 @@ function htmlName(node: SyntaxNode): string | undefined {
 
 function symbolName(node: SyntaxNode, kind: SymbolKind, language: string): string {
   if (kind === "constructor") return "constructor";
+  if (language === "cpp" && kind === "function") {
+    const operator = node.text.match(/([\p{L}_~][\p{L}\p{N}_~]*(?:::[\p{L}_~][\p{L}\p{N}_~]*)*::operator\s*(?:\(\)|\[\]|[^\s(]+))/u)?.[1];
+    if (operator) return operator.replaceAll("::", ".").replace(/\s+/g, "");
+  }
   if (node.type === "companion_object") return "companion object";
   if (node.type === "impl_item") {
     const trait = node.childForFieldName("trait")?.text;
@@ -612,6 +821,14 @@ function symbolName(node: SyntaxNode, kind: SymbolKind, language: string): strin
 
 function adjustedKind(node: SyntaxNode, captured: SymbolKind, language: string, name: string): SymbolKind {
   if (captured === "method" && name === "constructor") return "constructor";
+  if (
+    language === "swift" &&
+    captured === "class" &&
+    node.type === "class_declaration" &&
+    node.children[0]?.type === "extension"
+  ) {
+    return "implementation";
+  }
   if (captured !== "function") return captured;
   if (language === "rust" && ancestor(node, new Set(["impl_item", "trait_item"]))) return "method";
   if (language === "python" && ancestor(node, new Set(["class_definition"]))) return "method";
@@ -620,6 +837,171 @@ function adjustedKind(node: SyntaxNode, captured: SymbolKind, language: string, 
   if (language === "scala" && ancestor(node, new Set(["class_definition", "trait_definition", "object_definition"]))) return "method";
   if (language === "swift" && ancestor(node, new Set(["class_declaration", "protocol_declaration"]))) return "method";
   return captured;
+}
+
+const ECMASCRIPT_LANGUAGES = new Set(["javascript", "jsx", "typescript", "tsx"]);
+const CALLBACK_TYPES = new Set(["arrow_function", "function_expression"]);
+
+function sameNode(left: SyntaxNode | null | undefined, right: SyntaxNode): boolean {
+  return left?.startIndex === right.startIndex && left.endIndex === right.endIndex;
+}
+
+function safeCallbackName(node: SyntaxNode | null | undefined): string | undefined {
+  if (!node) return undefined;
+  if (["identifier", "property_identifier", "private_property_identifier"].includes(node.type)) {
+    return /^[\p{L}_$][\p{L}\p{N}_$-]*$/u.test(node.text) ? node.text : undefined;
+  }
+  if (["string", "string_fragment"].includes(node.type)) {
+    const name = cleanName(node.text);
+    return /^[\p{L}_$][\p{L}\p{N}_$-]*$/u.test(name) ? name : undefined;
+  }
+  if (["member_expression", "optional_chain"].includes(node.type)) {
+    const object = safeCallbackName(node.childForFieldName("object"));
+    const property = safeCallbackName(node.childForFieldName("property"));
+    return object && property ? `${object}.${property}` : property ?? object;
+  }
+  return safeCallbackName(
+    node.childForFieldName("name") ??
+      node.childForFieldName("property") ??
+      firstDescendant(node, ["identifier", "property_identifier", "private_property_identifier"]),
+  );
+}
+
+function callbackValue(node: SyntaxNode | null | undefined): SyntaxNode | undefined {
+  if (!node) return undefined;
+  if (CALLBACK_TYPES.has(node.type)) return node;
+  if (["parenthesized_expression", "jsx_expression", "as_expression", "satisfies_expression"].includes(node.type)) {
+    return firstDescendant(node, [...CALLBACK_TYPES]);
+  }
+  return undefined;
+}
+
+type CallbackOwner = { callable: SyntaxNode; item: SyntaxNode; name: string };
+
+function assignedCallbackOwner(node: SyntaxNode): CallbackOwner | undefined {
+  if (node.type === "variable_declarator") {
+    const callable = callbackValue(node.childForFieldName("value"));
+    const name = safeCallbackName(node.childForFieldName("name"));
+    if (callable && name) return { callable, item: node, name };
+  }
+  if (node.type === "pair") {
+    const callable = callbackValue(node.childForFieldName("value"));
+    const name = safeCallbackName(node.childForFieldName("key"));
+    if (callable && name) return { callable, item: node, name };
+  }
+  if (["assignment_expression", "augmented_assignment_expression"].includes(node.type)) {
+    const callable = callbackValue(node.childForFieldName("right"));
+    const name = safeCallbackName(node.childForFieldName("left"));
+    if (callable && name) return { callable, item: node, name };
+  }
+  if (["field_definition", "public_field_definition"].includes(node.type)) {
+    const callable = callbackValue(node.childForFieldName("value"));
+    const name = safeCallbackName(node.childForFieldName("property") ?? node.childForFieldName("name"));
+    if (callable && name) return { callable, item: node, name };
+  }
+  if (node.type === "jsx_attribute") {
+    const callable = callbackValue(node.childForFieldName("value") ?? node.namedChildren[1]);
+    const name = safeCallbackName(node.childForFieldName("name") ?? node.namedChildren[0]);
+    if (callable && name) return { callable, item: node, name };
+  }
+  return undefined;
+}
+
+function anonymousCallbackOwner(callable: SyntaxNode): CallbackOwner | undefined {
+  let current = callable;
+  while (current.parent && ["parenthesized_expression", "jsx_expression", "as_expression", "satisfies_expression"].includes(current.parent.type)) {
+    current = current.parent;
+  }
+  const assigned = current.parent ? assignedCallbackOwner(current.parent) : undefined;
+  if (assigned && sameNode(assigned.callable, callable)) return assigned;
+
+  let parent = current.parent;
+  while (parent && parent.type !== "arguments") parent = parent.parent;
+  const call = parent?.parent;
+  if (call?.type !== "call_expression" && call?.type !== "new_expression") return undefined;
+  let assignedExpression: SyntaxNode = call;
+  while (
+    assignedExpression.parent &&
+    ["await_expression", "parenthesized_expression", "as_expression", "satisfies_expression"].includes(
+      assignedExpression.parent.type,
+    )
+  ) {
+    assignedExpression = assignedExpression.parent;
+  }
+  const assignment = assignedExpression.parent;
+  if (assignment) {
+    const value = assignment.childForFieldName("value") ?? assignment.childForFieldName("right");
+    const name = safeCallbackName(
+      assignment.childForFieldName("name") ??
+        assignment.childForFieldName("key") ??
+        assignment.childForFieldName("left") ??
+        assignment.childForFieldName("property"),
+    );
+    if (value && name && sameNode(value, assignedExpression)) {
+      return { callable, item: assignment, name };
+    }
+  }
+  const name = safeCallbackName(call.childForFieldName("function") ?? call.childForFieldName("constructor"));
+  return name ? { callable, item: callable, name } : undefined;
+}
+
+function matchCallbackOwner(root: SyntaxNode, localIndex: number, length: number): CallbackOwner | undefined {
+  let current = root.namedDescendantForIndex(localIndex, localIndex + Math.max(0, length - 1)) ?? undefined;
+  while (current) {
+    const assigned = assignedCallbackOwner(current);
+    if (assigned) return assigned;
+    if (CALLBACK_TYPES.has(current.type)) return anonymousCallbackOwner(current);
+    current = current.parent ?? undefined;
+  }
+  return undefined;
+}
+
+function addMatchCallbackOwners(
+  root: SyntaxNode,
+  matches: SourceMatch[],
+  symbols: IndexedSymbol[],
+  language: string,
+  source: string,
+  options: ShapeOptions,
+  byteBase: number,
+  lineBase: number,
+): void {
+  if (!ECMASCRIPT_LANGUAGES.has(language)) return;
+  const sourceBytes = Buffer.byteLength(source, "utf8");
+  for (const match of matches) {
+    const localIndex = match.startIndex - byteBase;
+    if (localIndex < 0 || localIndex >= sourceBytes) continue;
+    const owner = matchCallbackOwner(root, localIndex, match.length);
+    if (!owner) continue;
+    const startIndex = owner.item.startIndex + byteBase;
+    const endIndex = owner.item.endIndex + byteBase;
+    const extracted = options.params ? parameterNames(owner.callable, language) : undefined;
+    const existing = symbols.find(
+      (symbol) => symbol.name === owner.name && symbol.startIndex <= startIndex && endIndex <= symbol.endIndex,
+    );
+    if (existing) {
+      existing.kind = "function";
+      if (extracted) {
+        existing.parameters = extracted.names;
+        existing.omittedParameterCount = extracted.omitted || undefined;
+      }
+      continue;
+    }
+    symbols.push({
+      kind: "function",
+      name: owner.name,
+      startLine: owner.item.startPosition.row + 1 + lineBase,
+      endLine: inclusiveEndLine(owner.item) + lineBase,
+      startColumn: owner.item.startPosition.column,
+      startIndex,
+      endIndex,
+      doc: options.docs ? documentationFor(owner.item, owner.callable, language, source) : undefined,
+      ...(extracted
+        ? { parameters: extracted.names, omittedParameterCount: extracted.omitted || undefined }
+        : {}),
+      children: [],
+    });
+  }
 }
 
 function countParseErrors(root: SyntaxNode): number {
@@ -713,19 +1095,6 @@ function findPath(roots: IndexedSymbol[], target: IndexedSymbol): IndexedSymbol[
   return path;
 }
 
-function publicSymbols(symbols: IndexedSymbol[]): CodeSymbol[] {
-  return symbols.map(({ kind, name, startLine, endLine, doc, parameters, omittedParameterCount, children }) => ({
-    kind: SHAPE_KIND[kind],
-    name,
-    startLine,
-    endLine,
-    ...(doc ? { doc } : {}),
-    ...(parameters ? { parameters } : {}),
-    ...(omittedParameterCount ? { omittedParameterCount } : {}),
-    children: publicSymbols(children),
-  }));
-}
-
 function deepestOwner(symbols: IndexedSymbol[], startIndex: number): IndexedSymbol | undefined {
   return symbols
     .filter((symbol) => symbol.startIndex <= startIndex && startIndex < symbol.endIndex)
@@ -739,9 +1108,13 @@ function qualifiedName(roots: IndexedSymbol[], symbol: IndexedSymbol): string {
 }
 
 type MatchPriority = {
+  coverage: number;
+  kind: number;
+  name: number;
   span: number;
   owned: number;
   occurrences: number;
+  path: number;
 };
 
 type MatchCandidate = {
@@ -750,6 +1123,7 @@ type MatchCandidate = {
   matchIndex: number;
   sourceOrder: number;
   priority: MatchPriority;
+  variants: number[];
 };
 
 type MatchData = {
@@ -760,11 +1134,86 @@ type MatchData = {
 const MATCH_DATA = new WeakMap<ShapeResult, MatchData>();
 
 function compareCandidates(left: MatchCandidate, right: MatchCandidate): number {
-  return right.priority.span - left.priority.span ||
-    right.priority.owned - left.priority.owned ||
+  return right.priority.owned - left.priority.owned ||
+    right.priority.kind - left.priority.kind ||
+    right.priority.name - left.priority.name ||
+    right.priority.path - left.priority.path ||
+    right.priority.coverage - left.priority.coverage ||
+    right.priority.span - left.priority.span ||
     right.priority.occurrences - left.priority.occurrences ||
     left.match.path.localeCompare(right.match.path) ||
     left.sourceOrder - right.sourceOrder;
+}
+
+export function outputChars(options: ShapeOptions): number {
+  return Math.max(120, Math.min(options.maxOutput ?? DEFAULT_OUTPUT_CHARS, MAX_OUTPUT_CHARS));
+}
+
+function ownerKindScore(kind: ShapeKind | "file"): number {
+  if (kind === "fn" || kind === "type" || kind === "impl") return 3;
+  if (kind === "var" || kind === "prop" || kind === "mod") return 2;
+  if (kind !== "file") return 1;
+  return 0;
+}
+
+function pathScore(path: string): number {
+  const normalized = `/${path.toLowerCase().replaceAll("\\", "/")}`;
+  const fileName = normalized.split("/").at(-1) ?? normalized;
+  let score = /\/(?:src|lib|app|source)\//.test(normalized) ? 2 : 0;
+  if (
+    /(?:^|\/)(?:__mocks__|__tests__|test|tests|testing|testdata|spec|specs|fixtures?|mocks?|stubs?|fakes?|examples?|docs?)(?:\/|$)/
+      .test(normalized)
+  ) {
+    score -= 2;
+  }
+  if (
+    /(?:^|[._-])(?:test|tests|spec|specs|mock|mocks|stub|stubs|fake|fakes)(?:[._-]|$)/.test(fileName) ||
+    /^(?:test|tests|spec|mock|stub|fake)|(?:test|tests|spec|specs|mock|mocks|stub|stubs|fake|fakes)\.[^.]+$/
+      .test(fileName)
+  ) {
+    score -= 2;
+  }
+  if (/(?:^|\/)(?:i18n|l10n|locales?|translations?)(?:\/|$)/.test(normalized)) score -= 3;
+  if (/(?:^|\/)(?:gen|generated)(?:\/|$)|(?:\.gen\.|\.generated\.|\.min\.|\.map$|\.d\.ts$)/.test(normalized)) {
+    score -= 3;
+  }
+  return score;
+}
+
+function ownerNameScore(owner: IndexedSymbol | undefined, match: SourceMatch): number {
+  if (!owner || !match.text) return 0;
+  const name = owner.name.split(".").at(-1)?.toLowerCase() ?? "";
+  const text = match.text.toLowerCase();
+  if (name === text) return 2;
+  const compact = (value: string) => value.replace(/[^\p{L}\p{N}]+/gu, "");
+  return compact(name) === compact(text) ? 1 : 0;
+}
+
+function applyFileCoverage(candidates: MatchCandidate[]): void {
+  const coverage = new Set(candidates.flatMap((candidate) => candidate.variants)).size;
+  for (const candidate of candidates) candidate.priority.coverage = coverage;
+}
+
+function diverseCandidates<T extends { candidate: MatchCandidate }>(entries: T[]): T[] {
+  const ranked = [...entries].sort((left, right) => compareCandidates(left.candidate, right.candidate));
+  if (ranked.length < 2) return ranked;
+  const selected: T[] = [];
+  const selectedSet = new Set<T>();
+  const covered = new Set<number>();
+  const take = (entry: T) => {
+    selected.push(entry);
+    selectedSet.add(entry);
+    for (const variant of entry.candidate.variants) covered.add(variant);
+  };
+  take(ranked[0] as T);
+  const variants = [...new Set(ranked.flatMap((entry) => entry.candidate.variants))].sort((left, right) => left - right);
+  for (const variant of variants) {
+    if (covered.has(variant)) continue;
+    const entry = ranked.find((candidate) => !selectedSet.has(candidate) && candidate.candidate.variants.includes(variant));
+    if (entry) take(entry);
+  }
+  for (const entry of ranked) if (!selectedSet.has(entry)) selected.push(entry);
+  return selected;
 }
 
 function symbolLabel(symbol: IndexedSymbol): string {
@@ -874,7 +1323,7 @@ function matchedOwners(
   roots: IndexedSymbol[],
   flat: IndexedSymbol[],
   sourceMatches: SourceMatch[],
-  maxItems: number,
+  maxOutput: number,
   useByteRanges: boolean,
 ): { candidates: MatchCandidate[]; matches: ShapeMatch[]; lines: string[]; omitted: number } {
   const candidateByOwner = new Map<string, MatchCandidate>();
@@ -884,6 +1333,8 @@ function matchedOwners(
     const existing = candidateByOwner.get(key);
     if (existing) {
       existing.priority.occurrences++;
+      existing.variants = [...new Set([...existing.variants, ...(match.variants ?? [])])];
+      existing.priority.name = Math.max(existing.priority.name, ownerNameScore(owner, match));
       if (match.length > existing.priority.span) {
         existing.priority.span = match.length;
         existing.match.line = match.line;
@@ -898,7 +1349,16 @@ function matchedOwners(
             chain: findPath(roots, owner),
             matchIndex: match.startIndex,
             sourceOrder: owner.startIndex,
-            priority: { span: match.length, owned: 1, occurrences: 1 },
+            priority: {
+              coverage: 0,
+              kind: ownerKindScore(SHAPE_KIND[owner.kind]),
+              name: ownerNameScore(owner, match),
+              span: match.length,
+              owned: 1,
+              occurrences: 1,
+              path: pathScore(path),
+            },
+            variants: match.variants ?? [0],
             match: {
             path,
             line: match.line,
@@ -915,17 +1375,39 @@ function matchedOwners(
             chain: [],
             matchIndex: match.startIndex,
             sourceOrder: match.startIndex,
-            priority: { span: match.length, owned: 0, occurrences: 1 },
+            priority: {
+              coverage: 0,
+              kind: 0,
+              name: 0,
+              span: match.length,
+              owned: 0,
+              occurrences: 1,
+              path: pathScore(path),
+            },
+            variants: match.variants ?? [0],
             match: { path, line: match.line, kind: "file" },
           },
     );
   }
 
   const candidates = [...candidateByOwner.values()];
-  const selected = [...candidates].sort(compareCandidates).slice(0, maxItems);
-  const rendered = selected.length
-    ? renderMatchTree(path, selected, useByteRanges)
-    : { lines: [], matches: [] };
+  applyFileCoverage(candidates);
+  const ordered = diverseCandidates(candidates.map((candidate) => ({ candidate }))).map((entry) => entry.candidate);
+  const all = ordered.length ? renderMatchTree(path, ordered, useByteRanges) : { lines: [], matches: [] };
+  let selected = ordered;
+  let rendered = all;
+  if (all.lines.join("\n").length > maxOutput) {
+    selected = [];
+    rendered = { lines: [], matches: [] };
+    const bodyBudget = Math.max(0, maxOutput - "\n[more]".length);
+    for (const candidate of ordered) {
+      const trialCandidates = [...selected, candidate];
+      const trial = renderMatchTree(path, trialCandidates, useByteRanges);
+      if (trial.lines.join("\n").length > bodyBudget) break;
+      selected = trialCandidates;
+      rendered = trial;
+    }
+  }
   return {
     candidates,
     matches: rendered.matches,
@@ -943,14 +1425,11 @@ export type DirectoryMatchSelection = {
   omittedMatches: number;
 };
 
-export function rankDirectoryMatches(files: ShapeResult[], maxItems: number): DirectoryMatchSelection {
-  const entries = files.flatMap((file) => {
-    const data = MATCH_DATA.get(file);
-    return data ? data.candidates.map((candidate) => ({ file, candidate, data })) : [];
-  });
-  const selected = [...entries].sort((left, right) => compareCandidates(left.candidate, right.candidate)).slice(0, maxItems);
+function renderDirectoryEntries(
+  entries: Array<{ file: ShapeResult; candidate: MatchCandidate; data: MatchData }>,
+): { files: ShapeResult[]; lines: string[] } {
   const grouped = new Map<ShapeResult, { candidates: MatchCandidate[]; data: MatchData }>();
-  for (const entry of selected) {
+  for (const entry of entries) {
     const group = grouped.get(entry.file);
     if (group) group.candidates.push(entry.candidate);
     else grouped.set(entry.file, { candidates: [entry.candidate], data: entry.data });
@@ -971,43 +1450,176 @@ export function rankDirectoryMatches(files: ShapeResult[], maxItems: number): Di
   const selectedFiles: ShapeResult[] = [];
   for (const [file, group] of groups) {
     const rendered = renderMatchTree(file.path, group.candidates, group.data.useByteRanges);
-    const fileMatchCount = group.data.candidates.length;
-    const omitted = Math.max(0, fileMatchCount - rendered.matches.length);
     lines.push(...rendered.lines);
     selectedFiles.push({
       ...file,
       shownCount: rendered.matches.length,
-      omittedCount: omitted,
-      matchCount: fileMatchCount,
-      omittedMatchCount: omitted,
+      omittedCount: 0,
+      matchCount: group.data.candidates.length,
+      omittedMatchCount: 0,
       matches: rendered.matches,
       text: rendered.lines.join("\n"),
     });
   }
+  return { files: selectedFiles, lines };
+}
+
+export function rankDirectoryMatches(files: ShapeResult[], maxOutput: number): DirectoryMatchSelection {
+  const entries = files.flatMap((file) => {
+    const data = MATCH_DATA.get(file);
+    return data ? data.candidates.map((candidate) => ({ file, candidate, data })) : [];
+  });
+  const ordered = diverseCandidates(entries);
+  let selected = ordered;
+  let rendered = renderDirectoryEntries(selected);
+  if (rendered.lines.join("\n").length > maxOutput) {
+    selected = [];
+    rendered = { files: [], lines: [] };
+    const bodyBudget = Math.max(0, maxOutput - "\n[more]".length);
+    for (const entry of ordered) {
+      const trialEntries = [...selected, entry];
+      const trial = renderDirectoryEntries(trialEntries);
+      if (trial.lines.join("\n").length > bodyBudget) break;
+      selected = trialEntries;
+      rendered = trial;
+    }
+  }
   return {
-    files: selectedFiles,
-    lines,
+    files: rendered.files,
+    lines: rendered.lines,
     shownCount: selected.length,
-    shownFileCount: selectedFiles.length,
+    shownFileCount: rendered.files.length,
     matchCount: entries.length,
     omittedMatches: Math.max(0, entries.length - selected.length),
   };
 }
 
+export function combineMatchResults(
+  path: string,
+  results: ShapeResult[],
+  options: ShapeOptions,
+  incomplete = true,
+): ShapeResult {
+  const candidateByOwner = new Map<string, MatchCandidate>();
+  let useByteRanges = false;
+  for (const result of results) {
+    const data = MATCH_DATA.get(result);
+    if (!data) continue;
+    useByteRanges ||= data.useByteRanges;
+    for (const candidate of data.candidates) {
+      const owner = candidate.chain.at(-1);
+      const overlappingOwner = owner
+        ? [...candidateByOwner.entries()].find(([, existingCandidate]) => {
+            const existingOwner = existingCandidate.chain.at(-1);
+            if (!existingOwner || existingOwner.name !== owner.name || existingOwner.kind !== owner.kind) return false;
+            const overlap = Math.min(existingOwner.endIndex, owner.endIndex) - Math.max(existingOwner.startIndex, owner.startIndex);
+            const shorter = Math.min(
+              existingOwner.endIndex - existingOwner.startIndex,
+              owner.endIndex - owner.startIndex,
+            );
+            return overlap > 0 && overlap / shorter >= 0.8;
+          })?.[0]
+        : undefined;
+      const key = overlappingOwner ?? (owner
+        ? `${owner.startIndex}:${owner.endIndex}:${owner.name}`
+        : `file:${candidate.match.line}:${candidate.matchIndex}`);
+      const existing = candidateByOwner.get(key);
+      if (!existing) {
+        candidateByOwner.set(key, {
+          ...candidate,
+          chain: [...candidate.chain],
+          priority: { ...candidate.priority },
+          variants: [...candidate.variants],
+          match: { ...candidate.match },
+        });
+        continue;
+      }
+      existing.priority.occurrences += candidate.priority.occurrences;
+      existing.priority.kind = Math.max(existing.priority.kind, candidate.priority.kind);
+      existing.priority.name = Math.max(existing.priority.name, candidate.priority.name);
+      existing.priority.path = Math.max(existing.priority.path, candidate.priority.path);
+      existing.variants = [...new Set([...existing.variants, ...candidate.variants])];
+      if (candidate.priority.span > existing.priority.span) {
+        existing.priority.span = candidate.priority.span;
+        existing.matchIndex = candidate.matchIndex;
+        existing.match.line = candidate.match.line;
+      }
+    }
+  }
+
+  const candidates = [...candidateByOwner.values()];
+  applyFileCoverage(candidates);
+  const parseErrors = results.reduce((sum, result) => sum + result.parseErrors, 0);
+  const queryLimited = incomplete || results.some((result) => result.queryLimited);
+  const suffix = queryLimited ? "\n[incomplete]" : "";
+  const maxOutput = Math.max(0, outputChars(options) - suffix.length);
+  const ordered = diverseCandidates(candidates.map((candidate) => ({ candidate }))).map((entry) => entry.candidate);
+  let selected = ordered;
+  let rendered = selected.length ? renderMatchTree(path, selected, useByteRanges) : { lines: [], matches: [] };
+  if (rendered.lines.join("\n").length > maxOutput) {
+    selected = [];
+    rendered = { lines: [], matches: [] };
+    const bodyBudget = Math.max(0, maxOutput - "\n[more]".length);
+    for (const candidate of ordered) {
+      const trialCandidates = [...selected, candidate];
+      const trial = renderMatchTree(path, trialCandidates, useByteRanges);
+      if (trial.lines.join("\n").length > bodyBudget) break;
+      selected = trialCandidates;
+      rendered = trial;
+    }
+  }
+  const omitted = Math.max(0, candidates.length - selected.length);
+  const body = rendered.lines.length ? rendered.lines.join("\n") : "[no match]";
+  const limit = omitted ? "\n[more]" : "";
+  const result: ShapeResult = {
+    path,
+    language: results[0]?.language ?? "unknown",
+    lineCount: Math.max(0, ...results.map((item) => item.lineCount)),
+    parseErrors,
+    definitionCount: results.reduce((sum, item) => sum + item.definitionCount, 0),
+    shownCount: rendered.matches.length,
+    omittedCount: omitted,
+    queryLimited,
+    focus: "match",
+    ...(options.docs
+      ? {
+          docCount: rendered.matches.filter((match) => match.doc).length,
+          omittedDocCount: 0,
+        }
+      : {}),
+    matchCount: candidates.length,
+    omittedMatchCount: omitted,
+    matches: rendered.matches,
+    symbols: [],
+    text: `${body}${limit}${suffix}`,
+  };
+  MATCH_DATA.set(result, { candidates, useByteRanges });
+  return result;
+}
+
 function formatSymbols(
   roots: IndexedSymbol[],
   depth: number,
-  maxItems: number,
+  maxChars: number,
   useByteRanges: boolean,
-): { lines: string[]; shown: number; omitted: number; docsShown: number; docsOmitted: number } {
+): {
+  lines: string[];
+  shown: number;
+  omitted: number;
+  docsShown: number;
+  docsOmitted: number;
+  included: Set<IndexedSymbol>;
+} {
   const lines: string[] = [];
   let shown = 0;
   let omitted = 0;
   let docsShown = 0;
   let docsOmitted = 0;
+  let used = 0;
+  const included = new Set<IndexedSymbol>();
   const visit = (items: IndexedSymbol[], level: number) => {
     for (const symbol of items) {
-      if (shown >= maxItems || level > depth) {
+      if (level > depth) {
         omitted += flatten([symbol]).length;
         continue;
       }
@@ -1023,22 +1635,44 @@ function formatSymbols(
       const label = symbol.name === symbol.kind && symbol.kind !== "constructor"
         ? `${shortKind}${parameters}`
         : `${shortKind} ${symbol.name}${parameters}`;
-      let doc = "";
-      if (symbol.doc) {
-        if (docsShown < MAX_DOCS) {
-          doc = ` | ${symbol.doc}`;
-          docsShown++;
-        } else {
-          docsOmitted++;
-        }
+      const prefix = `${"  ".repeat(level)}${label} [${range}]`;
+      let line = `${prefix}${symbol.doc ? ` | ${symbol.doc}` : ""}`;
+      const lineCost = (lines.length ? 1 : 0) + line.length;
+      if (used + lineCost > maxChars && symbol.doc) {
+        line = prefix;
+        docsOmitted++;
       }
-      lines.push(`${"  ".repeat(level)}${label} [${range}]${doc}`);
+      const cost = (lines.length ? 1 : 0) + line.length;
+      if (used + cost > maxChars) {
+        omitted += flatten([symbol]).length;
+        continue;
+      }
+      lines.push(line);
+      used += cost;
       shown++;
+      included.add(symbol);
+      if (symbol.doc && line !== prefix) docsShown++;
       visit(symbol.children, level + 1);
     }
   };
   visit(roots, 0);
-  return { lines, shown, omitted, docsShown, docsOmitted };
+  return { lines, shown, omitted, docsShown, docsOmitted, included };
+}
+
+function publicIncludedSymbols(roots: IndexedSymbol[], included: Set<IndexedSymbol>): CodeSymbol[] {
+  return roots.flatMap((symbol): CodeSymbol[] => {
+    if (!included.has(symbol)) return [];
+    return [{
+      kind: SHAPE_KIND[symbol.kind],
+      name: symbol.name,
+      startLine: symbol.startLine,
+      endLine: symbol.endLine,
+      ...(symbol.doc ? { doc: symbol.doc } : {}),
+      ...(symbol.parameters !== undefined ? { parameters: symbol.parameters } : {}),
+      ...(symbol.omittedParameterCount ? { omittedParameterCount: symbol.omittedParameterCount } : {}),
+      children: publicIncludedSymbols(symbol.children, included),
+    }];
+  });
 }
 
 export async function shapeSource(
@@ -1046,13 +1680,18 @@ export async function shapeSource(
   source: string,
   options: ShapeOptions = {},
   signal?: AbortSignal,
+  context?: ShapeSourceContext,
 ): Promise<ShapeResult> {
   const focusCount = Number(Boolean(options.symbol)) + Number(options.line !== undefined) + Number(options.match !== undefined);
   if (focusCount > 1) throw new Error("Use only one of symbol, line, or match focus");
   if (signal?.aborted) throw new Error("shape was cancelled");
   const spec = detectLanguage(path, source);
   if (!spec) throw new Error(`Unsupported source language for ${path}. Supported: ${supportedLanguages().join(", ")}`);
-  const regexMatches = options.match !== undefined ? await sourceMatches(source, options.match, signal) : undefined;
+  const byteBase = context?.byteBase ?? 0;
+  const lineBase = context?.lineBase ?? 0;
+  const regexMatches = options.match !== undefined
+    ? context?.matches ?? await sourceMatches(source, options.match, signal)
+    : undefined;
 
   const language = await loadShapeLanguage(spec);
   const parser = new Parser();
@@ -1073,14 +1712,13 @@ export async function shapeSource(
     try {
       query = new Query(language, spec.query);
       const captures = query.captures(tree.rootNode, {
-        matchLimit: MAX_EXTRACTED_ITEMS * 4,
+        matchLimit: MAX_QUERY_CAPTURES,
         timeoutMicros: PARSE_BUDGET_MS * 1_000,
         progressCallback: () => signal?.aborted === true,
       });
       const seen = new Set<string>();
       const symbols: IndexedSymbol[] = [];
       for (const capture of captures) {
-        if (symbols.length >= MAX_EXTRACTED_ITEMS) break;
         const definition = capture.node;
         const capturedKind = capture.name as SymbolKind;
         const name = symbolName(definition, capturedKind, spec.id);
@@ -1093,11 +1731,11 @@ export async function shapeSource(
         symbols.push({
           kind,
           name,
-          startLine: item.startPosition.row + 1,
-          endLine: inclusiveEndLine(item),
+          startLine: item.startPosition.row + 1 + lineBase,
+          endLine: inclusiveEndLine(item) + lineBase,
           startColumn: item.startPosition.column,
-          startIndex: item.startIndex,
-          endIndex: item.endIndex,
+          startIndex: item.startIndex + byteBase,
+          endIndex: item.endIndex + byteBase,
           doc: options.docs ? documentationFor(item, definition, spec.id, source) : undefined,
           ...(() => {
             if (!options.params || SHAPE_KIND[kind] !== "fn") return {};
@@ -1109,29 +1747,33 @@ export async function shapeSource(
           children: [],
         });
       }
+      if (regexMatches) {
+        addMatchCallbackOwners(tree.rootNode, regexMatches, symbols, spec.id, source, options, byteBase, lineBase);
+      }
       symbols.sort((left, right) => left.startIndex - right.startIndex || right.endIndex - left.endIndex);
       if (spec.id === "haskell") mergeHaskellFunctions(symbols);
       const roots = nestSymbols(symbols);
       const flat = flatten(roots);
       const depth = Math.max(0, Math.min(options.depth ?? 4, 12));
-      const maxItems = Math.max(
-        1,
-        Math.min(options.maxItems ?? (options.match !== undefined ? DEFAULT_MATCH_ITEMS : DEFAULT_MAX_ITEMS), 500),
-      );
 
-      const parseErrors = countParseErrors(tree.rootNode);
-      const lineCount = logicalLineCount(source);
-      const useByteRanges = lineCount === 1 && Buffer.byteLength(source, "utf8") >= 200;
+      const parseErrors = context?.incomplete ? 0 : countParseErrors(tree.rootNode);
+      const lineCount = context?.fullLineCount ?? logicalLineCount(source);
+      const useByteRanges = context?.forceByteRanges === true || shouldUseByteRanges(source);
       if (regexMatches) {
-        const matched = matchedOwners(path, roots, flat, regexMatches, maxItems, useByteRanges);
         const queryLimited =
           query.didExceedMatchLimit() ||
-          symbols.length >= MAX_EXTRACTED_ITEMS ||
-          regexMatches.length >= MAX_SOURCE_MATCHES;
+          context?.incomplete === true;
+        const suffix = queryLimited ? "\n[incomplete]" : "";
+        const matched = matchedOwners(
+          path,
+          roots,
+          flat,
+          regexMatches,
+          Math.max(0, outputChars(options) - suffix.length),
+          useByteRanges,
+        );
         const body = matched.lines.length ? matched.lines.join("\n") : "[no match]";
-        const limit = matched.omitted ? `\n[+${matched.omitted} owners]` : "";
-        const errors = parseErrors ? `\n[errors=${parseErrors}]` : "";
-        const incomplete = queryLimited ? "\n[incomplete]" : "";
+        const limit = matched.omitted ? "\n[more]" : "";
         const result: ShapeResult = {
           path,
           language: spec.id,
@@ -1152,7 +1794,7 @@ export async function shapeSource(
           omittedMatchCount: matched.omitted,
           matches: matched.matches,
           symbols: [],
-          text: `${body}${limit}${errors}${incomplete}`,
+          text: `${body}${limit}${suffix}`,
         };
         MATCH_DATA.set(result, { candidates: matched.candidates, useByteRanges });
         return result;
@@ -1178,16 +1820,20 @@ export async function shapeSource(
         focus = target ? findPath(roots, target).map((symbol) => symbol.name).join(" > ") : `line ${options.line}`;
       }
 
-      const formatted = formatSymbols(selectedRoots, depth, maxItems, useByteRanges);
       const header = `${path} ${spec.id} ${lineCount.toLocaleString()}L${parseErrors ? ` errors=${parseErrors}` : ""}`;
       const focusLine = options.line !== undefined && focus ? `\n@ ${focus}` : "";
       const noMatches = selectedRoots.length === 0 ? "\n[no match]" : "";
+      const queryLimited = query.didExceedMatchLimit();
+      const fixedSuffix = `${queryLimited ? "\n[incomplete]" : ""}`;
+      const outputBudget = Math.max(
+        0,
+        outputChars(options) - header.length - focusLine.length - noMatches.length - fixedSuffix.length -
+          "\n[more]".length - (selectedRoots.length ? 1 : 0),
+      );
+      const formatted = formatSymbols(selectedRoots, depth, outputBudget, useByteRanges);
       const outline = formatted.lines.length ? `\n${formatted.lines.join("\n")}` : "";
-      const omitted = formatted.omitted + Math.max(0, flat.length - symbols.length);
-      const limit = omitted > 0 ? `\n[+${omitted} omitted]` : "";
-      const docLimit = formatted.docsOmitted > 0 ? `\n[+${formatted.docsOmitted} docs omitted]` : "";
-      const queryLimited = query.didExceedMatchLimit() || symbols.length >= MAX_EXTRACTED_ITEMS;
-      const incomplete = queryLimited ? "\n[incomplete]" : "";
+      const omitted = formatted.omitted;
+      const limit = omitted > 0 || formatted.docsOmitted > 0 ? "\n[more]" : "";
       return {
         path,
         language: spec.id,
@@ -1199,8 +1845,8 @@ export async function shapeSource(
         queryLimited,
         focus,
         ...(options.docs ? { docCount: formatted.docsShown, omittedDocCount: formatted.docsOmitted } : {}),
-        symbols: publicSymbols(selectedRoots),
-        text: `${header}${focusLine}${noMatches}${outline}${limit}${docLimit}${incomplete}`,
+        symbols: publicIncludedSymbols(selectedRoots, formatted.included),
+        text: `${header}${focusLine}${noMatches}${outline}${limit}${fixedSuffix}`,
       };
     } finally {
       tree.delete();
