@@ -1,0 +1,4 @@
+interface:
+  display_name: "API Shape"
+  short_description: "Map API operations, messages, and declared schemas"
+  default_prompt: "Use $api-shape to map this API contract without calling its operations."

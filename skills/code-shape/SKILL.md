@@ -1,6 +1,6 @@
 ---
 name: code-shape
-description: Use first for repository code discovery when locating the implementation or owner of a symbol, UI control, behavior, callback, route, or data key. Run it before broad file reads or repeated searches, especially across many files or inside large, generated, or minified files.
+description: Use first for repository source discovery when locating the implementation or owner of a symbol, UI control, behavior, callback, route, or config key. Do not use for page semantics, document outlines, datasets, live databases, or API contracts.
 ---
 
 # Code shape

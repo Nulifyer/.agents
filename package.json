@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "skills/*"
+    "skills/*",
+    "packages/*"
   ],
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run test",

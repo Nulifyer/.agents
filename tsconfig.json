@@ -31,7 +31,8 @@
     "erasableSyntaxOnly": true,
   },
   "include": [
-    "skills/**/scripts/**/*.ts"
+    "skills/**/scripts/**/*.ts",
+    "packages/**/src/**/*.ts"
   ],
   "exclude": [
     "node_modules",

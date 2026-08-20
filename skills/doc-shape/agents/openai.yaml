@@ -1,0 +1,4 @@
+interface:
+  display_name: "Doc Shape"
+  short_description: "Map document sections, tables, code blocks, and pages"
+  default_prompt: "Use $doc-shape to map this document before reading selected sections."

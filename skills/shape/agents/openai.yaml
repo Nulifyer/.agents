@@ -1,0 +1,6 @@
+interface:
+  display_name: "Shape"
+  short_description: "Route mixed targets to focused shape tools"
+  default_prompt: "Use $shape to map this target with the right focused shape tool."
+policy:
+  allow_implicit_invocation: false

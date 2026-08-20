@@ -11,6 +11,10 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/shape-core": {
+      "name": "@nulifyer/shape-core",
+      "version": "0.1.0",
+    },
     "skills/code-shape": {
       "name": "@nulifyer/code-shape",
       "version": "0.1.0",
@@ -53,6 +57,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.9", "", { "os": "win32", "cpu": "x64" }, "sha512-Yiq0H56LjXSSw/hd9YkXgSLQfzyDJzbzU2TezozxyNw+uKWAqOtqGVvBfzKRRDiaFF5avGAhHdWKx7LtDOShUw=="],
 
     "@nulifyer/code-shape": ["@nulifyer/code-shape@workspace:skills/code-shape"],
+
+    "@nulifyer/shape-core": ["@nulifyer/shape-core@workspace:packages/shape-core"],
 
     "@tree-sitter-grammars/tree-sitter-kotlin": ["@tree-sitter-grammars/tree-sitter-kotlin@1.1.0", "", { "dependencies": { "node-addon-api": "^8.3.0", "node-gyp-build": "^4.8.4", "npm-check-updates": "^17.1.13" }, "peerDependencies": { "tree-sitter": "^0.22.4" }, "optionalPeers": ["tree-sitter"] }, "sha512-vlVXaxEE8t2kpJgfZpa8XVvxcnKw9AYtRTgy7KWjsDmAsadk06RxAT80IXOgGQnmM9i/orQn1nD84gPNUHu6DQ=="],
 

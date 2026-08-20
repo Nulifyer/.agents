@@ -1,0 +1,4 @@
+interface:
+  display_name: "Db Shape"
+  short_description: "Map database tables, columns, keys, and relationships"
+  default_prompt: "Use $db-shape to inspect this database through metadata without reading rows."

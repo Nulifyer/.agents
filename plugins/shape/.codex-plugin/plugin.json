@@ -1,0 +1,22 @@
+{
+  "name": "shape",
+  "version": "0.1.0",
+  "description": "Compact structural maps for code, pages, documents, data, databases, and API contracts.",
+  "author": {
+    "name": "Nulifyer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Shape",
+    "shortDescription": "Inspect structure before reading source or values.",
+    "longDescription": "Shape maps code ownership, page semantics, document outlines, data schemas, database catalogs, and API contracts with compact locators and explicit access provenance.",
+    "developerName": "Nulifyer",
+    "category": "Productivity",
+    "capabilities": ["Analysis"],
+    "defaultPrompt": [
+      "Map this target before reading it deeply.",
+      "Show this data's structure without values.",
+      "Choose the right shape for this file."
+    ]
+  }
+}
