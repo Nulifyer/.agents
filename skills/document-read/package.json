@@ -1,0 +1,12 @@
+{
+  "name": "@nulifyer/document-read",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "document-extract": "./scripts/document-extract.ts"
+  },
+  "scripts": {
+    "test": "bun test scripts/document-extract.test.ts"
+  }
+}
