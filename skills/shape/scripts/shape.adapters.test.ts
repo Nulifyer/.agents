@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { renderShape, type CommonOptions, type ShapeResult } from "../../../packages/shape-core/src/index.ts";
+import { renderShape, type CommonOptions, type ShapeResult } from "./lib/core.ts";
 import { shapeApi } from "../../api-shape/scripts/api-shape.ts";
 import { shapeData } from "../../data-shape/scripts/data-shape.ts";
 import { shapeDatabase } from "../../db-shape/scripts/db-shape.ts";

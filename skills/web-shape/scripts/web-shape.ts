@@ -8,7 +8,7 @@ import {
   type CommonOptions,
   type ShapeNode,
   type ShapeResult,
-} from "../../../packages/shape-core/src/index.ts";
+} from "../../shape/scripts/lib/core.ts";
 
 const SEMANTIC_TAGS = new Set([
   "a",

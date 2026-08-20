@@ -9,7 +9,7 @@ import {
   type CommonOptions,
   type ShapeNode,
   type ShapeResult,
-} from "../../../packages/shape-core/src/index.ts";
+} from "../../shape/scripts/lib/core.ts";
 
 const MAX_DEPTH = 8;
 const ARRAY_SAMPLE = 64;

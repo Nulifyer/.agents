@@ -1,4 +1,0 @@
-interface:
-  display_name: "Web Shape"
-  short_description: "Map page landmarks, controls, forms, and links"
-  default_prompt: "Use $web-shape to map the semantic structure and controls of this page."

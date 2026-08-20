@@ -8,7 +8,7 @@ import {
   type CommonOptions,
   type ShapeNode,
   type ShapeResult,
-} from "../../../packages/shape-core/src/index.ts";
+} from "../../shape/scripts/lib/core.ts";
 
 type SqliteObject = { name: string; type: "table" | "view" };
 type SqliteColumn = { name: string; type: string; notnull: number; pk: number; hidden: number };

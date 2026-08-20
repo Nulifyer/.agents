@@ -1,8 +1,7 @@
 import { type Node as SyntaxNode, Parser, Query } from "web-tree-sitter";
-import { DEFAULT_OUTPUT_CHARS as SHARED_DEFAULT_OUTPUT_CHARS } from "../../../../packages/shape-core/src/index.ts";
 import { detectLanguage, loadShapeLanguage, supportedLanguages } from "./languages.ts";
 
-export const DEFAULT_OUTPUT_CHARS = SHARED_DEFAULT_OUTPUT_CHARS;
+export const DEFAULT_OUTPUT_CHARS = 800;
 export const MAX_OUTPUT_CHARS = 100_000;
 const MAX_DOC_CHARS = 200;
 const MAX_MATCH_PATTERN_CHARS = 500;

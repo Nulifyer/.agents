@@ -30,10 +30,7 @@
     "noPropertyAccessFromIndexSignature": true,
     "erasableSyntaxOnly": true,
   },
-  "include": [
-    "skills/**/scripts/**/*.ts",
-    "packages/**/src/**/*.ts"
-  ],
+  "include": ["skills/**/scripts/**/*.ts"],
   "exclude": [
     "node_modules",
     "sessions",

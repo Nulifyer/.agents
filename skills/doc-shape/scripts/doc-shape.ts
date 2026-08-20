@@ -11,7 +11,7 @@ import {
   type CommonOptions,
   type ShapeNode,
   type ShapeResult,
-} from "../../../packages/shape-core/src/index.ts";
+} from "../../shape/scripts/lib/core.ts";
 
 function usage(): string {
   return "Usage: doc-shape <markdown|docx|pdf file> [--labels] [--names show|hash|omit] [-o <chars>] [-j]\n       doc-shape - <name.md> [options]";

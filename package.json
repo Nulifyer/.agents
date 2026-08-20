@@ -2,10 +2,7 @@
   "name": "@nulifyer/agent-skills",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "skills/*",
-    "packages/*"
-  ],
+  "workspaces": ["skills/*"],
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run test",
     "typecheck": "tsc --noEmit",
