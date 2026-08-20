@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 
 import { resolve } from "node:path";
-import { shapeFile, type ShapeOptions } from "./lib/index.ts";
+import { shapeTarget, type ShapeTargetOptions } from "./lib/index.ts";
 
-type CliOptions = ShapeOptions & {
+type CliOptions = ShapeTargetOptions & {
   path: string;
   json: boolean;
 };
 
 function usage(): string {
-  return "Usage: code-shape <path> [--symbol <name> | --line <number>] [--depth <number>] [--max-items <number>] [--json]";
+  return "Usage: code-shape <path> [glob] [--symbol <name> | --line <number>] [--depth <number>] [--max-items <number>] [--json]";
 }
 
 function integer(value: string | undefined, flag: string, minimum: number, maximum?: number): number {
@@ -23,6 +23,7 @@ function integer(value: string | undefined, flag: string, minimum: number, maxim
 
 function parseArgs(args: string[]): CliOptions | undefined {
   let path: string | undefined;
+  let glob: string | undefined;
   let symbol: string | undefined;
   let line: number | undefined;
   let depth: number | undefined;
@@ -54,13 +55,14 @@ function parseArgs(args: string[]): CliOptions | undefined {
       continue;
     }
     if (argument?.startsWith("-")) throw new Error(`Unknown option: ${argument}`);
-    if (path) throw new Error(`Unexpected argument: ${argument}`);
-    path = argument;
+    if (!path) path = argument;
+    else if (!glob) glob = argument;
+    else throw new Error(`Unexpected argument: ${argument}`);
   }
 
   if (!path) throw new Error("A file path is required");
   if (symbol && line !== undefined) throw new Error("Use either --symbol or --line, not both");
-  return { path, symbol, line, depth, maxItems, json };
+  return { path, glob, symbol, line, depth, maxItems, json };
 }
 
 async function main(): Promise<void> {
@@ -71,8 +73,13 @@ async function main(): Promise<void> {
   }
 
   const { path, json, ...shapeOptions } = options;
-  const result = await shapeFile(resolve(process.cwd(), path), shapeOptions, undefined, path);
-  console.log(json ? JSON.stringify(result, null, 2) : result.text);
+  const result = await shapeTarget(resolve(process.cwd(), path), shapeOptions, undefined, path);
+  if (!json) {
+    console.log(result.text);
+    return;
+  }
+  const { text: _text, ...structured } = result;
+  console.log(JSON.stringify(structured));
 }
 
 if (import.meta.main) {

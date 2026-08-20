@@ -12,7 +12,6 @@ export type LanguageSpec = {
   packageName?: string;
   wasmFile: string;
   query: string;
-  bodyTypes?: string[];
 };
 
 const ECMASCRIPT_COMMON_QUERY = `
@@ -24,6 +23,8 @@ const ECMASCRIPT_COMMON_QUERY = `
 (generator_function name: (identifier)) @function
 (method_definition) @method
 (variable_declarator value: [(arrow_function) (function_expression)]) @function
+(program (lexical_declaration "const" (variable_declarator name: (identifier)) @constant))
+(export_statement declaration: (lexical_declaration "const" (variable_declarator name: (identifier)) @constant))
 `;
 
 const JAVASCRIPT_QUERY = `${ECMASCRIPT_COMMON_QUERY}
@@ -36,6 +37,7 @@ const TYPESCRIPT_QUERY = `${ECMASCRIPT_COMMON_QUERY}
 (type_alias_declaration) @type
 (enum_declaration) @enum
 (module) @module
+(internal_module) @module
 (function_signature) @function
 (method_signature) @method
 (abstract_method_signature) @method
@@ -156,7 +158,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
     extensions: [".c", ".h"],
     wasmFile: "tree-sitter-c.wasm",
     query: C_QUERY,
-    bodyTypes: ["compound_statement", "field_declaration_list", "enumerator_list"],
   },
   {
     id: "cpp",
@@ -168,7 +169,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (alias_declaration) @type
 (concept_definition) @type
 `,
-    bodyTypes: ["compound_statement", "declaration_list", "field_declaration_list", "enumerator_list"],
   },
   {
     id: "csharp",
@@ -190,7 +190,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (event_declaration) @property
 (field_declaration) @field
 `,
-    bodyTypes: ["class_declaration", "record_declaration", "struct_declaration", "interface_declaration", "enum_declaration", "declaration_list", "block", "enum_member_declaration_list"],
   },
   {
     id: "css",
@@ -203,7 +202,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (keyframes_statement) @section
 (namespace_statement) @section
 `,
-    bodyTypes: ["block"],
   },
   {
     id: "dart",
@@ -222,7 +220,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (getter_signature) @property
 (setter_signature) @property
 `,
-    bodyTypes: ["class_body", "enum_body", "extension_body", "function_body"],
   },
   {
     id: "elisp",
@@ -252,7 +249,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (script_element) @element
 (style_element) @element
 `,
-    bodyTypes: ["element", "script_element", "style_element", "text", "raw_text"],
   },
   {
     id: "haskell",
@@ -271,7 +267,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (function name: (variable)) @function
 (foreign_import) @function
 `,
-    bodyTypes: ["declarations", "class_declarations", "instance_declarations"],
   },
   {
     id: "java",
@@ -290,14 +285,12 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (method_declaration) @method
 (field_declaration) @field
 `,
-    bodyTypes: ["class_body", "interface_body", "annotation_type_body", "enum_body", "module_body", "constructor_body", "block"],
   },
   {
     id: "json",
     extensions: [".json", ".jsonl", ".ndjson"],
     wasmFile: "tree-sitter-json.wasm",
     query: "(pair) @key",
-    bodyTypes: ["object", "array"],
   },
   {
     id: "julia",
@@ -319,7 +312,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
     packageName: "@tree-sitter-grammars/tree-sitter-lua",
     wasmFile: "tree-sitter-lua.wasm",
     query: "(function_declaration) @function",
-    bodyTypes: ["block"],
   },
   {
     id: "objective-c",
@@ -333,7 +325,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (method_definition) @method
 (property_declaration) @property
 `,
-    bodyTypes: ["compound_statement", "field_declaration_list", "enumerator_list", "implementation_definition"],
   },
   {
     id: "ocaml",
@@ -349,7 +340,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (method_definition) @method
 (exception_definition) @type
 `,
-    bodyTypes: ["structure", "signature", "class_body", "class_body_type"],
   },
   {
     id: "php",
@@ -366,7 +356,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (property_declaration) @property
 (const_declaration) @constant
 `,
-    bodyTypes: ["declaration_list", "compound_statement"],
   },
   {
     id: "rescript",
@@ -379,7 +368,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (exception_declaration) @type
 (let_binding) @function
 `,
-    bodyTypes: ["module_expression", "record_type", "variant_type", "function"],
   },
   {
     id: "ruby",
@@ -393,7 +381,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (method) @method
 (singleton_method) @method
 `,
-    bodyTypes: ["body_statement"],
   },
   {
     id: "scala",
@@ -409,7 +396,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (function_definition) @function
 (function_declaration) @function
 `,
-    bodyTypes: ["template_body", "block"],
   },
   {
     id: "solidity",
@@ -429,7 +415,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (state_variable_declaration) @field
 (user_defined_type_definition) @type
 `,
-    bodyTypes: ["contract_body", "function_body"],
   },
   {
     id: "swift",
@@ -449,7 +434,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (macro_declaration) @macro
 (macro_definition) @macro
 `,
-    bodyTypes: ["class_body", "protocol_body", "enum_class_body", "function_body", "computed_property"],
   },
   {
     id: "systemrdl",
@@ -461,7 +445,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (enum_def) @enum
 (property_definition) @property
 `,
-    bodyTypes: ["component_body", "struct_body", "enum_body", "property_body"],
   },
   {
     id: "systemverilog",
@@ -484,7 +467,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (type_declaration) @type
 (text_macro_definition) @macro
 `,
-    bodyTypes: ["module_item", "interface_item", "program_item", "package_item", "class_item", "function_declaration", "task_declaration", "data_declaration", "function_statement", "seq_block"],
   },
   {
     id: "razor",
@@ -506,7 +488,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (property_declaration) @property
 (field_declaration) @field
 `,
-    bodyTypes: ["declaration_list", "block"],
   },
   {
     id: "tlaplus",
@@ -519,7 +500,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (module_definition) @module
 (pcal_macro_decl) @macro
 `,
-    bodyTypes: ["variable_declaration", "constant_declaration", "operator_definition", "function_definition"],
   },
   {
     id: "toml",
@@ -565,7 +545,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (style_element) @section
 (element) @element
 `,
-    bodyTypes: ["element", "template_element", "script_element", "style_element", "raw_text", "text"],
   },
   {
     id: "yaml",
@@ -576,7 +555,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (block_mapping_pair) @key
 (flow_pair) @key
 `,
-    bodyTypes: ["block_mapping", "block_sequence", "flow_mapping", "flow_sequence"],
   },
   {
     id: "zig",
@@ -589,7 +567,6 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (error_set_declaration) @type
 (variable_declaration) @constant
 `,
-    bodyTypes: ["block", "struct_declaration", "enum_declaration", "union_declaration"],
   },
 ];
 

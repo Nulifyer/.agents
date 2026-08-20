@@ -1,9 +1,8 @@
 import { type Node as SyntaxNode, Parser, Query } from "web-tree-sitter";
-import { detectLanguage, loadShapeLanguage, type LanguageSpec, supportedLanguages } from "./languages.ts";
+import { detectLanguage, loadShapeLanguage, supportedLanguages } from "./languages.ts";
 
 const DEFAULT_MAX_ITEMS = 200;
 const MAX_EXTRACTED_ITEMS = 2_000;
-const MAX_SIGNATURE_LENGTH = 240;
 const PARSE_BUDGET_MS = 2_000;
 
 type SymbolKind =
@@ -29,15 +28,48 @@ type SymbolKind =
   | "key"
   | "element";
 
+export type ShapeKind = "elem" | "fn" | "impl" | "key" | "mod" | "prop" | "sec" | "sel" | "type" | "var";
+
+const SHAPE_KIND: Record<SymbolKind, ShapeKind> = {
+  class: "type",
+  constant: "var",
+  constructor: "fn",
+  element: "elem",
+  enum: "type",
+  field: "prop",
+  function: "fn",
+  implementation: "impl",
+  interface: "type",
+  key: "key",
+  macro: "fn",
+  method: "fn",
+  module: "mod",
+  namespace: "mod",
+  object: "type",
+  property: "prop",
+  section: "sec",
+  selector: "sel",
+  struct: "type",
+  trait: "type",
+  type: "type",
+};
+
 export type CodeSymbol = {
+  kind: ShapeKind;
+  name: string;
+  startLine: number;
+  endLine: number;
+  children: CodeSymbol[];
+};
+
+type IndexedSymbol = {
   kind: SymbolKind;
   name: string;
-  signature: string;
   startLine: number;
   endLine: number;
   startIndex: number;
   endIndex: number;
-  children: CodeSymbol[];
+  children: IndexedSymbol[];
 };
 
 export type ShapeResult = {
@@ -146,16 +178,19 @@ function symbolName(node: SyntaxNode, kind: SymbolKind, language: string): strin
     return key ? cleanName(key.text) : "key";
   }
   if (language === "toml" && kind === "section") {
-    const key = firstDescendant(node, ["bare_key", "quoted_key"]);
-    return key ? cleanName(key.text) : "section";
+    const keys = node
+      .descendantsOfType(["bare_key", "quoted_key"])
+      .filter((key): key is SyntaxNode => key !== null)
+      .map((key) => cleanName(key.text));
+    return keys.join(".") || "section";
   }
   if (language === "css" && kind === "section") {
-    return node.text.slice(0, node.text.indexOf("{") >= 0 ? node.text.indexOf("{") : undefined).trim();
+    return node.type.replace(/_statement$/, "");
   }
   if (language === "vue" && kind === "section") return firstDescendant(node, "tag_name")?.text ?? "section";
-  if (language === "embedded-template") return node.text.replace(/\s+/g, " ").trim();
+  if (language === "embedded-template") return node.type === "output_directive" ? "output" : "directive";
   if (language === "razor" && kind === "section") {
-    return node.type === "razor_block" ? "code" : node.text.replace(/\s+/g, " ").trim();
+    return node.type === "razor_block" ? "code" : node.type.replace(/^razor_|_directive$/g, "");
   }
   if (language === "tree-sitter-query") {
     if (node.type === "capture") return `@${firstDescendant(node, "identifier")?.text ?? "capture"}`;
@@ -174,7 +209,9 @@ function symbolName(node: SyntaxNode, kind: SymbolKind, language: string): strin
   if (direct) {
     if (language === "lua") return cleanName(direct.text);
     const nested = firstDescendant(direct, ["identifier", "field_identifier", "type_identifier"]);
-    return cleanName(nested?.text ?? direct.text);
+    if (nested) return cleanName(nested.text);
+    const candidate = cleanName(direct.text);
+    return /^[\p{L}_$][\p{L}\p{N}_$.-]*$/u.test(candidate) ? candidate : kind;
   }
 
   if (node.type === "property_declaration") {
@@ -218,92 +255,6 @@ function adjustedKind(node: SyntaxNode, captured: SymbolKind, language: string, 
   return captured;
 }
 
-function bodyStart(node: SyntaxNode, spec: LanguageSpec): number | undefined {
-  const language = spec.id;
-  const direct = node.childForFieldName("body");
-  if (direct) return direct.startIndex;
-
-  if (node.type === "pair" || node.type.endsWith("_pair")) {
-    const value = node.childForFieldName("value") ?? node.namedChildren.at(-1);
-    if (value && ["object", "array", "block_mapping", "block_sequence", "flow_mapping", "flow_sequence"].includes(value.type)) {
-      return value.startIndex;
-    }
-  }
-
-  if (["element", "script_element", "style_element", "template_element"].includes(node.type)) {
-    const startTag = firstDescendant(node, ["start_tag", "self_closing_tag"]);
-    if (startTag) return startTag.endIndex;
-  }
-
-  if (node.type === "table" || node.type === "table_array_element") {
-    const pair = firstDescendant(node, "pair");
-    if (pair) return pair.startIndex;
-  }
-
-  if (language === "elisp" && ["function_definition", "macro_definition"].includes(node.type)) {
-    return node.childForFieldName("parameters")?.endIndex;
-  }
-
-  if (language === "objective-c" && ["class_interface", "class_implementation"].includes(node.type)) {
-    return firstDescendant(node, ["method_declaration", "method_definition", "property_declaration"])?.startIndex;
-  }
-
-  if (language === "julia") {
-    const signature = node.type === "function_definition" ? firstDescendant(node, "signature") : undefined;
-    if (signature) return signature.endIndex;
-    const name = node.childForFieldName("name") ?? firstDescendant(node, ["identifier", "type_head"]);
-    const next = name ? node.namedChildren.find((child) => child && child.startIndex >= name.endIndex) : undefined;
-    if (next) return next.startIndex;
-  }
-
-  if (language === "haskell" && node.type === "function") return node.childForFieldName("match")?.startIndex;
-
-  if (language === "razor" && node.type === "razor_block") {
-    const brace = node.text.indexOf("{");
-    if (brace >= 0) return node.startIndex + brace;
-  }
-
-  if (node.type === "variable_declarator") {
-    const value = node.childForFieldName("value");
-    const body = value?.childForFieldName("body");
-    if (body) return body.startIndex;
-  }
-
-  if (language === "go" && node.type === "type_spec") {
-    const type = node.childForFieldName("type");
-    const brace = type?.text.indexOf("{") ?? -1;
-    if (type && brace >= 0) return type.startIndex + brace;
-  }
-
-  if (["typescript", "tsx"].includes(language) && node.type === "type_alias_declaration") {
-    const objectType = firstDescendant(node, "object_type");
-    if (objectType) return objectType.startIndex;
-  }
-
-  const defaultBodyTypes: Record<string, string[]> = {
-    bash: ["compound_statement"],
-    go: ["field_declaration_list", "block"],
-    kotlin: ["class_body", "enum_class_body", "function_body", "block"],
-    rust: ["declaration_list", "field_declaration_list", "ordered_field_declaration_list", "enum_variant_list", "block"],
-    tsx: ["class_body", "interface_body", "enum_body", "statement_block"],
-    typescript: ["class_body", "interface_body", "enum_body", "statement_block"],
-  };
-  return firstDescendant(node, spec.bodyTypes ?? defaultBodyTypes[language] ?? [])?.startIndex;
-}
-
-function signatureFor(source: string, item: SyntaxNode, definition: SyntaxNode, spec: LanguageSpec): string {
-  const bodyIndex = bodyStart(definition, spec);
-  const endIndex = bodyIndex && bodyIndex > item.startIndex ? bodyIndex : item.endIndex;
-  const normalized = source
-    .slice(item.startIndex, endIndex)
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[;{]\s*$/, "")
-    .trim();
-  if (normalized.length <= MAX_SIGNATURE_LENGTH) return normalized;
-  return `${normalized.slice(0, MAX_SIGNATURE_LENGTH - 1).trimEnd()}…`;
-}
-
 function countParseErrors(root: SyntaxNode): number {
   let count = 0;
   const cursor = root.walk();
@@ -321,12 +272,12 @@ function countParseErrors(root: SyntaxNode): number {
   }
 }
 
-function nestSymbols(symbols: CodeSymbol[]): CodeSymbol[] {
-  const roots: CodeSymbol[] = [];
-  const stack: CodeSymbol[] = [];
+function nestSymbols(symbols: IndexedSymbol[]): IndexedSymbol[] {
+  const roots: IndexedSymbol[] = [];
+  const stack: IndexedSymbol[] = [];
   for (const symbol of symbols) {
     while (stack.length > 0) {
-      const parent = stack.at(-1) as CodeSymbol;
+      const parent = stack.at(-1) as IndexedSymbol;
       if (parent.startIndex <= symbol.startIndex && symbol.endIndex <= parent.endIndex) break;
       stack.pop();
     }
@@ -341,9 +292,9 @@ function nestSymbols(symbols: CodeSymbol[]): CodeSymbol[] {
   return roots;
 }
 
-function flatten(symbols: CodeSymbol[]): CodeSymbol[] {
-  const result: CodeSymbol[] = [];
-  const visit = (items: CodeSymbol[]) => {
+function flatten(symbols: IndexedSymbol[]): IndexedSymbol[] {
+  const result: IndexedSymbol[] = [];
+  const visit = (items: IndexedSymbol[]) => {
     for (const item of items) {
       result.push(item);
       visit(item.children);
@@ -353,9 +304,9 @@ function flatten(symbols: CodeSymbol[]): CodeSymbol[] {
   return result;
 }
 
-function findPath(roots: CodeSymbol[], target: CodeSymbol): CodeSymbol[] {
-  const path: CodeSymbol[] = [];
-  const visit = (items: CodeSymbol[]): boolean => {
+function findPath(roots: IndexedSymbol[], target: IndexedSymbol): IndexedSymbol[] {
+  const path: IndexedSymbol[] = [];
+  const visit = (items: IndexedSymbol[]): boolean => {
     for (const item of items) {
       path.push(item);
       if (item === target || visit(item.children)) return true;
@@ -367,18 +318,39 @@ function findPath(roots: CodeSymbol[], target: CodeSymbol): CodeSymbol[] {
   return path;
 }
 
-function formatSymbols(roots: CodeSymbol[], depth: number, maxItems: number): { lines: string[]; shown: number; omitted: number } {
+function publicSymbols(symbols: IndexedSymbol[]): CodeSymbol[] {
+  return symbols.map(({ kind, name, startLine, endLine, children }) => ({
+    kind: SHAPE_KIND[kind],
+    name,
+    startLine,
+    endLine,
+    children: publicSymbols(children),
+  }));
+}
+
+function formatSymbols(
+  roots: IndexedSymbol[],
+  depth: number,
+  maxItems: number,
+  useByteRanges: boolean,
+): { lines: string[]; shown: number; omitted: number } {
   const lines: string[] = [];
   let shown = 0;
   let omitted = 0;
-  const visit = (items: CodeSymbol[], level: number) => {
+  const visit = (items: IndexedSymbol[], level: number) => {
     for (const symbol of items) {
       if (shown >= maxItems || level > depth) {
         omitted += flatten([symbol]).length;
         continue;
       }
-      const range = symbol.startLine === symbol.endLine ? `${symbol.startLine}` : `${symbol.startLine}-${symbol.endLine}`;
-      lines.push(`${"  ".repeat(level)}${symbol.signature || `${symbol.kind} ${symbol.name}`} [${range}]`);
+      const range = useByteRanges
+        ? `b${symbol.startIndex}-${symbol.endIndex}`
+        : symbol.startLine === symbol.endLine
+          ? `${symbol.startLine}`
+          : `${symbol.startLine}-${symbol.endLine}`;
+      const shortKind = SHAPE_KIND[symbol.kind];
+      const label = symbol.name === symbol.kind && symbol.kind !== "constructor" ? shortKind : `${shortKind} ${symbol.name}`;
+      lines.push(`${"  ".repeat(level)}${label} [${range}]`);
       shown++;
       visit(symbol.children, level + 1);
     }
@@ -394,7 +366,7 @@ export async function shapeSource(
   signal?: AbortSignal,
 ): Promise<ShapeResult> {
   if (options.symbol && options.line !== undefined) throw new Error("Use either symbol or line focus, not both");
-  if (signal?.aborted) throw new Error("code_shape was cancelled");
+  if (signal?.aborted) throw new Error("shape was cancelled");
   const spec = detectLanguage(path, source);
   if (!spec) throw new Error(`Unsupported source language for ${path}. Supported: ${supportedLanguages().join(", ")}`);
 
@@ -409,10 +381,10 @@ export async function shapeSource(
           progressCallback: () => signal?.aborted === true || Date.now() > deadline,
         })
       : parser.parse(source);
-    if (!tree) throw new Error(signal?.aborted ? "code_shape was cancelled" : "Tree-sitter parse budget exceeded");
+    if (!tree) throw new Error(signal?.aborted ? "shape was cancelled" : "Tree-sitter parse budget exceeded");
     if (signal?.aborted || Date.now() > deadline) {
       tree.delete();
-      throw new Error(signal?.aborted ? "code_shape was cancelled" : "Tree-sitter parse budget exceeded");
+      throw new Error(signal?.aborted ? "shape was cancelled" : "Tree-sitter parse budget exceeded");
     }
     try {
       query = new Query(language, spec.query);
@@ -422,7 +394,7 @@ export async function shapeSource(
         progressCallback: () => signal?.aborted === true,
       });
       const seen = new Set<string>();
-      const symbols: CodeSymbol[] = [];
+      const symbols: IndexedSymbol[] = [];
       for (const capture of captures) {
         if (symbols.length >= MAX_EXTRACTED_ITEMS) break;
         const definition = capture.node;
@@ -431,13 +403,12 @@ export async function shapeSource(
         if (!name) continue;
         const kind = adjustedKind(definition, capturedKind, spec.id, name);
         const item = expandedNode(definition, spec.id);
-        const key = `${item.startIndex}:${item.endIndex}`;
+        const key = `${item.startIndex}:${item.endIndex}:${name}`;
         if (seen.has(key)) continue;
         seen.add(key);
         symbols.push({
           kind,
           name,
-          signature: signatureFor(source, item, definition, spec),
           startLine: item.startPosition.row + 1,
           endLine: inclusiveEndLine(item),
           startIndex: item.startIndex,
@@ -454,7 +425,13 @@ export async function shapeSource(
       let selectedRoots = roots;
       let focus: string | undefined;
       if (options.symbol) {
-        selectedRoots = flat.filter((symbol) => symbol.name === options.symbol);
+        const matches = flat.filter((symbol) => symbol.name === options.symbol);
+        const matchSet = new Set(matches);
+        selectedRoots = matches.filter((symbol) =>
+          findPath(roots, symbol)
+            .slice(0, -1)
+            .every((ancestor) => !matchSet.has(ancestor)),
+        );
         focus = `symbol ${options.symbol}`;
       } else if (options.line !== undefined) {
         const candidates = flat
@@ -465,17 +442,18 @@ export async function shapeSource(
         focus = target ? findPath(roots, target).map((symbol) => symbol.name).join(" > ") : `line ${options.line}`;
       }
 
-      const formatted = formatSymbols(selectedRoots, depth, maxItems);
       const parseErrors = countParseErrors(tree.rootNode);
       const lineCount = logicalLineCount(source);
-      const header = `${path}\n${spec.id} | ${lineCount.toLocaleString()} lines | ${flat.length.toLocaleString()} definitions | parse: ${parseErrors ? `${parseErrors} recovered errors` : "clean"}`;
-      const focusLine = focus ? `\nfocus: ${focus}` : "";
-      const noMatches = selectedRoots.length === 0 ? "\n\n[No matching definitions]" : "";
-      const outline = formatted.lines.length ? `\n\n${formatted.lines.join("\n")}` : "";
+      const useByteRanges = lineCount === 1 && Buffer.byteLength(source, "utf8") >= 200;
+      const formatted = formatSymbols(selectedRoots, depth, maxItems, useByteRanges);
+      const header = `${path} ${spec.id} ${lineCount.toLocaleString()}L${parseErrors ? ` errors=${parseErrors}` : ""}`;
+      const focusLine = options.line !== undefined && focus ? `\n@ ${focus}` : "";
+      const noMatches = selectedRoots.length === 0 ? "\n[no match]" : "";
+      const outline = formatted.lines.length ? `\n${formatted.lines.join("\n")}` : "";
       const omitted = formatted.omitted + Math.max(0, flat.length - symbols.length);
-      const limit = omitted > 0 ? `\n\n[${omitted} definitions omitted; narrow with symbol or line]` : "";
+      const limit = omitted > 0 ? `\n[+${omitted} omitted]` : "";
       const queryLimited = query.didExceedMatchLimit() || symbols.length >= MAX_EXTRACTED_ITEMS;
-      const incomplete = queryLimited ? "\n\n[Tree-sitter query limit reached; outline may be incomplete]" : "";
+      const incomplete = queryLimited ? "\n[incomplete]" : "";
       return {
         path,
         language: spec.id,
@@ -486,7 +464,7 @@ export async function shapeSource(
         omittedCount: omitted,
         queryLimited,
         focus,
-        symbols: selectedRoots,
+        symbols: publicSymbols(selectedRoots),
         text: `${header}${focusLine}${noMatches}${outline}${limit}${incomplete}`,
       };
     } finally {

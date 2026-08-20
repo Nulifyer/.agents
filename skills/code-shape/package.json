@@ -1,0 +1,30 @@
+{
+  "name": "@nulifyer/code-shape",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "code-shape": "./scripts/code-shape.ts",
+    "shape": "./scripts/code-shape.ts"
+  },
+  "exports": {
+    ".": "./scripts/lib/index.ts"
+  },
+  "scripts": {
+    "test": "bun test scripts/code-shape.test.ts"
+  },
+  "dependencies": {
+    "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
+    "@tree-sitter-grammars/tree-sitter-lua": "0.4.1",
+    "@tree-sitter-grammars/tree-sitter-yaml": "0.7.1",
+    "tree-sitter-bash": "0.25.0",
+    "tree-sitter-go": "0.25.0",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-rust": "0.24.0",
+    "tree-sitter-typescript": "0.23.2",
+    "tree-sitter-wasm": "1.1.4",
+    "tree-sitter-wasms": "0.1.13",
+    "web-tree-sitter": "0.25.10"
+  }
+}
