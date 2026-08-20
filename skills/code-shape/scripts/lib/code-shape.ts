@@ -134,6 +134,7 @@ function logicalLineCount(source: string): number {
 
 type SourceMatch = {
   startIndex: number;
+  length: number;
   line: number;
 };
 
@@ -142,7 +143,7 @@ type RipgrepMatch = {
   data: {
     absolute_offset: number;
     line_number: number;
-    submatches: Array<{ start: number }>;
+    submatches: Array<{ start: number; end: number }>;
   };
 };
 
@@ -194,6 +195,7 @@ async function sourceMatches(source: string, pattern: string, signal?: AbortSign
     for (const submatch of match.data.submatches) {
       matches.push({
         startIndex: match.data.absolute_offset + submatch.start,
+        length: submatch.end - submatch.start,
         line: match.data.line_number,
       });
       if (matches.length >= MAX_SOURCE_MATCHES) break;
@@ -736,6 +738,137 @@ function qualifiedName(roots: IndexedSymbol[], symbol: IndexedSymbol): string {
     .join(".");
 }
 
+type MatchPriority = {
+  span: number;
+  owned: number;
+  occurrences: number;
+};
+
+type MatchCandidate = {
+  match: ShapeMatch;
+  chain: IndexedSymbol[];
+  matchIndex: number;
+  sourceOrder: number;
+  priority: MatchPriority;
+};
+
+type MatchData = {
+  candidates: MatchCandidate[];
+  useByteRanges: boolean;
+};
+
+const MATCH_DATA = new WeakMap<ShapeResult, MatchData>();
+
+function compareCandidates(left: MatchCandidate, right: MatchCandidate): number {
+  return right.priority.span - left.priority.span ||
+    right.priority.owned - left.priority.owned ||
+    right.priority.occurrences - left.priority.occurrences ||
+    left.match.path.localeCompare(right.match.path) ||
+    left.sourceOrder - right.sourceOrder;
+}
+
+function symbolLabel(symbol: IndexedSymbol): string {
+  const parameters = symbol.parameters
+    ? `(${symbol.parameters.join(",")}${symbol.omittedParameterCount ? `,+${symbol.omittedParameterCount}` : ""})`
+    : "";
+  const kind = SHAPE_KIND[symbol.kind];
+  return symbol.name === symbol.kind && symbol.kind !== "constructor"
+    ? `${kind}${parameters}`
+    : `${kind} ${symbol.name}${parameters}`;
+}
+
+function symbolRange(symbol: IndexedSymbol, useByteRanges: boolean): string {
+  if (useByteRanges) return `b${symbol.startIndex}-${symbol.endIndex}`;
+  return symbol.startLine === symbol.endLine ? `${symbol.startLine}` : `${symbol.startLine}-${symbol.endLine}`;
+}
+
+type MatchBranch = {
+  symbol: IndexedSymbol;
+  direct?: MatchCandidate;
+  best: MatchCandidate;
+  children: Map<IndexedSymbol, MatchBranch>;
+};
+
+function renderMatchTree(
+  path: string,
+  candidates: MatchCandidate[],
+  useByteRanges: boolean,
+): { lines: string[]; matches: ShapeMatch[] } {
+  const roots = new Map<IndexedSymbol, MatchBranch>();
+  const fileCandidates: MatchCandidate[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.chain.length === 0) {
+      fileCandidates.push(candidate);
+      continue;
+    }
+    let branches = roots;
+    for (const [index, symbol] of candidate.chain.entries()) {
+      let branch = branches.get(symbol);
+      if (!branch) {
+        branch = { symbol, best: candidate, children: new Map() };
+        branches.set(symbol, branch);
+      } else if (compareCandidates(candidate, branch.best) < 0) {
+        branch.best = candidate;
+      }
+      if (index === candidate.chain.length - 1) branch.direct = candidate;
+      branches = branch.children;
+    }
+  }
+
+  const lines = [path];
+  const orderedMatches: ShapeMatch[] = [];
+  const renderBranch = (branch: MatchBranch, level: number) => {
+    const direct = branch.direct;
+    const location = direct
+      ? useByteRanges
+        ? ` @b${direct.matchIndex}`
+        : direct.match.line === branch.symbol.startLine
+          ? ""
+          : ` @${direct.match.line}`
+      : "";
+    lines.push(
+      `${"  ".repeat(level)}${symbolLabel(branch.symbol)} [${symbolRange(branch.symbol, useByteRanges)}]${location}` +
+        `${branch.symbol.doc ? ` | ${branch.symbol.doc}` : ""}`,
+    );
+    if (direct) orderedMatches.push(direct.match);
+    const children = [...branch.children.values()].sort(
+      (left, right) => compareCandidates(left.best, right.best) || left.symbol.startIndex - right.symbol.startIndex,
+    );
+    for (const child of children) renderBranch(child, level + 1);
+  };
+
+  const rootItems: Array<
+    | { kind: "branch"; best: MatchCandidate; sourceOrder: number; branch: MatchBranch }
+    | { kind: "file"; best: MatchCandidate; sourceOrder: number; candidate: MatchCandidate }
+  > = [
+    ...[...roots.values()].map((branch) => ({
+      kind: "branch" as const,
+      best: branch.best,
+      sourceOrder: branch.symbol.startIndex,
+      branch,
+    })),
+    ...fileCandidates.map((candidate) => ({
+      kind: "file" as const,
+      best: candidate,
+      sourceOrder: candidate.sourceOrder,
+      candidate,
+    })),
+  ];
+  rootItems.sort(
+    (left, right) => compareCandidates(left.best, right.best) || left.sourceOrder - right.sourceOrder,
+  );
+  for (const item of rootItems) {
+    if (item.kind === "branch") {
+      renderBranch(item.branch, 1);
+      continue;
+    }
+    lines.push(`  file ${useByteRanges ? `@b${item.candidate.matchIndex}` : `@${item.candidate.match.line}`}`);
+    orderedMatches.push(item.candidate.match);
+  }
+  return { lines, matches: orderedMatches };
+}
+
 function matchedOwners(
   path: string,
   roots: IndexedSymbol[],
@@ -743,19 +876,29 @@ function matchedOwners(
   sourceMatches: SourceMatch[],
   maxItems: number,
   useByteRanges: boolean,
-): { matches: ShapeMatch[]; lines: string[]; omitted: number } {
-  const candidates: Array<{ match: ShapeMatch; startIndex?: number; endIndex?: number }> = [];
-  const seen = new Set<string>();
+): { candidates: MatchCandidate[]; matches: ShapeMatch[]; lines: string[]; omitted: number } {
+  const candidateByOwner = new Map<string, MatchCandidate>();
   for (const match of sourceMatches) {
     const owner = deepestOwner(flat, match.startIndex);
     const key = owner ? `${owner.startIndex}:${owner.endIndex}:${owner.name}` : `file:${match.line}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    candidates.push(
+    const existing = candidateByOwner.get(key);
+    if (existing) {
+      existing.priority.occurrences++;
+      if (match.length > existing.priority.span) {
+        existing.priority.span = match.length;
+        existing.match.line = match.line;
+        existing.matchIndex = match.startIndex;
+      }
+      continue;
+    }
+    candidateByOwner.set(
+      key,
       owner
         ? {
-            startIndex: owner.startIndex,
-            endIndex: owner.endIndex,
+            chain: findPath(roots, owner),
+            matchIndex: match.startIndex,
+            sourceOrder: owner.startIndex,
+            priority: { span: match.length, owned: 1, occurrences: 1 },
             match: {
             path,
             line: match.line,
@@ -768,27 +911,86 @@ function matchedOwners(
             ...(owner.omittedParameterCount ? { omittedParameterCount: owner.omittedParameterCount } : {}),
             },
           }
-        : { match: { path, line: match.line, kind: "file" } },
+        : {
+            chain: [],
+            matchIndex: match.startIndex,
+            sourceOrder: match.startIndex,
+            priority: { span: match.length, owned: 0, occurrences: 1 },
+            match: { path, line: match.line, kind: "file" },
+          },
     );
   }
 
-  const selected = candidates.slice(0, maxItems);
-  const lines = selected.map(({ match, startIndex, endIndex }) => {
-    const parameters = match.parameters
-      ? `(${match.parameters.join(",")}${match.omittedParameterCount ? `,+${match.omittedParameterCount}` : ""})`
-      : "";
-    const label = match.kind === "file" ? "file" : `${match.kind} ${match.name}${parameters}`;
-    const range = match.startLine === undefined
-      ? ""
-      : useByteRanges
-        ? ` [b${startIndex}-${endIndex}]`
-        : ` [${match.startLine === match.endLine ? match.startLine : `${match.startLine}-${match.endLine}`}]`;
-    return `${path}:${match.line} ${label}${range}${match.doc ? ` | ${match.doc}` : ""}`;
-  });
+  const candidates = [...candidateByOwner.values()];
+  const selected = [...candidates].sort(compareCandidates).slice(0, maxItems);
+  const rendered = selected.length
+    ? renderMatchTree(path, selected, useByteRanges)
+    : { lines: [], matches: [] };
   return {
-    matches: selected.map((candidate) => candidate.match),
-    lines,
+    candidates,
+    matches: rendered.matches,
+    lines: rendered.lines,
     omitted: Math.max(0, candidates.length - selected.length),
+  };
+}
+
+export type DirectoryMatchSelection = {
+  files: ShapeResult[];
+  lines: string[];
+  shownCount: number;
+  shownFileCount: number;
+  matchCount: number;
+  omittedMatches: number;
+};
+
+export function rankDirectoryMatches(files: ShapeResult[], maxItems: number): DirectoryMatchSelection {
+  const entries = files.flatMap((file) => {
+    const data = MATCH_DATA.get(file);
+    return data ? data.candidates.map((candidate) => ({ file, candidate, data })) : [];
+  });
+  const selected = [...entries].sort((left, right) => compareCandidates(left.candidate, right.candidate)).slice(0, maxItems);
+  const grouped = new Map<ShapeResult, { candidates: MatchCandidate[]; data: MatchData }>();
+  for (const entry of selected) {
+    const group = grouped.get(entry.file);
+    if (group) group.candidates.push(entry.candidate);
+    else grouped.set(entry.file, { candidates: [entry.candidate], data: entry.data });
+  }
+  const groups = [...grouped].sort(([leftFile, left], [rightFile, right]) => {
+    const leftBest = left.candidates.reduce((best, candidate) =>
+      compareCandidates(candidate, best) < 0 ? candidate : best
+    );
+    const rightBest = right.candidates.reduce((best, candidate) =>
+      compareCandidates(candidate, best) < 0 ? candidate : best
+    );
+    return compareCandidates(leftBest, rightBest) ||
+      right.candidates.length - left.candidates.length ||
+      leftFile.path.localeCompare(rightFile.path);
+  });
+
+  const lines: string[] = [];
+  const selectedFiles: ShapeResult[] = [];
+  for (const [file, group] of groups) {
+    const rendered = renderMatchTree(file.path, group.candidates, group.data.useByteRanges);
+    const fileMatchCount = group.data.candidates.length;
+    const omitted = Math.max(0, fileMatchCount - rendered.matches.length);
+    lines.push(...rendered.lines);
+    selectedFiles.push({
+      ...file,
+      shownCount: rendered.matches.length,
+      omittedCount: omitted,
+      matchCount: fileMatchCount,
+      omittedMatchCount: omitted,
+      matches: rendered.matches,
+      text: rendered.lines.join("\n"),
+    });
+  }
+  return {
+    files: selectedFiles,
+    lines,
+    shownCount: selected.length,
+    shownFileCount: selectedFiles.length,
+    matchCount: entries.length,
+    omittedMatches: Math.max(0, entries.length - selected.length),
   };
 }
 
@@ -930,7 +1132,7 @@ export async function shapeSource(
         const limit = matched.omitted ? `\n[+${matched.omitted} owners]` : "";
         const errors = parseErrors ? `\n[errors=${parseErrors}]` : "";
         const incomplete = queryLimited ? "\n[incomplete]" : "";
-        return {
+        const result: ShapeResult = {
           path,
           language: spec.id,
           lineCount,
@@ -952,6 +1154,8 @@ export async function shapeSource(
           symbols: [],
           text: `${body}${limit}${errors}${incomplete}`,
         };
+        MATCH_DATA.set(result, { candidates: matched.candidates, useByteRanges });
+        return result;
       }
 
       let selectedRoots = roots;

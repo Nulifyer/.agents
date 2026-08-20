@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
-import { type ShapeOptions, type ShapeResult, validateMatchPattern } from "./code-shape.ts";
+import { rankDirectoryMatches, type ShapeOptions, type ShapeResult, validateMatchPattern } from "./code-shape.ts";
 import { shapeFile, UnshapableFileError } from "./file.ts";
 import { detectLanguage } from "./languages.ts";
 
@@ -158,35 +158,25 @@ async function shapeDirectory(
 
   const omittedFileCount = Math.max(0, matches.length - processedCount);
   if (options.match !== undefined) {
-    const candidateLines = files.flatMap((file) => file.text.split("\n").slice(0, file.shownCount));
-    const selectedLines = candidateLines.slice(0, maxItems);
-    const matchCount = files.reduce((count, file) => count + (file.matchCount ?? 0), 0);
-    const omittedMatches = Math.max(0, matchCount - selectedLines.length);
-    let remaining = selectedLines.length;
-    let shownFileCount = 0;
-    for (const file of files) {
-      if (remaining <= 0) break;
-      if (file.shownCount > 0) shownFileCount++;
-      remaining -= Math.min(remaining, file.shownCount);
-    }
-    const body = selectedLines.join("\n") || "[no match]";
-    const ownerLimit = omittedMatches ? `\n[+${omittedMatches} owners]` : "";
+    const ranked = rankDirectoryMatches(files, maxItems);
+    const body = ranked.lines.join("\n") || "[no match]";
+    const ownerLimit = ranked.omittedMatches ? `\n[+${ranked.omittedMatches} owners]` : "";
     const fileLimit = omittedFileCount ? `\n[+${omittedFileCount} files]` : "";
     const errors = parseErrors ? `\n[errors=${parseErrors}]` : "";
     const incomplete = files.some((file) => file.queryLimited) ? "\n[incomplete]" : "";
     return {
       path: displayPath,
       fileCount: matches.length,
-      shownFileCount,
+      shownFileCount: ranked.shownFileCount,
       omittedFileCount,
       definitionCount,
-      shownCount: selectedLines.length,
-      omittedCount: omittedMatches,
+      shownCount: ranked.shownCount,
+      omittedCount: ranked.omittedMatches,
       parseErrors,
       focus: "match",
-      matchCount,
-      omittedMatchCount: omittedMatches,
-      files,
+      matchCount: ranked.matchCount,
+      omittedMatchCount: ranked.omittedMatches,
+      files: ranked.files,
       text: `${body}${ownerLimit}${fileLimit}${errors}${incomplete}`,
     };
   }

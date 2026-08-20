@@ -295,7 +295,7 @@ export const double = (value: number): number => value * 2;
     ]);
     expect(matchExitCode).toBe(0);
     expect(matchStderr).toBe("");
-    expect(matchStdout).toContain("remote.ts:1 fn remote [1]");
+    expect(matchStdout).toContain("remote.ts\n  fn remote [1]");
     expect(matchStdout).not.toContain("needle");
   });
 
@@ -315,7 +315,7 @@ export const double = (value: number): number => value * 2;
     expect(result.focus).toBe("match");
     expect(result.matchCount).toBe(1);
     expect(result.shownCount).toBe(1);
-    expect(result.text).toBe("cards.ts:3 fn Cards.render(card) [2-5]");
+    expect(result.text).toBe("cards.ts\n  type Cards [1-6]\n    fn render(card) [2-5] @3");
     expect(result.text).not.toContain("Add to Deck");
     expect(result.symbols).toEqual([]);
     expect(result.matches?.[0]).toMatchObject({
@@ -331,7 +331,7 @@ export const double = (value: number): number => value * 2;
 
   test("returns file locations when regex matches have no enclosing symbol", async () => {
     const result = await shapeSource("cards.js", "// Add to Deck\n", { match: "add.*deck" });
-    expect(result.text).toBe("cards.js:1 file");
+    expect(result.text).toBe("cards.js\n  file @1");
     expect(result.matches?.[0]).toEqual({ path: "cards.js", line: 1, kind: "file" });
 
     expect((await shapeSource("cards.js", "function render() {}", { match: "missing" })).text).toBe("[no match]");
@@ -362,7 +362,7 @@ export const double = (value: number): number => value * 2;
     expect(bounded.shownCount).toBe(12);
     expect(bounded.matchCount).toBe(14);
     expect(bounded.omittedMatchCount).toBe(2);
-    expect(bounded.text).toContain("jobs.js:12 fn job11 [12]");
+    expect(bounded.text).toContain("  fn job11 [12]");
     expect(bounded.text).toContain("[+2 owners]");
     expect(bounded.text).not.toContain("job12");
 
@@ -379,14 +379,45 @@ export const double = (value: number): number => value * 2;
       "src",
     );
     expect(matched.shownCount).toBe(2);
-    expect(matched.text).toContain("cards.ts:2 fn render(card) [2] | Draws cards.");
-    expect(matched.text).toContain("deck.js:1 fn addToDeck(card) [1]");
+    expect(matched.text).toContain("cards.ts\n  fn render(card) [2] | Draws cards.");
+    expect(matched.text).toContain("deck.js\n  fn addToDeck(card) [1]");
     expect(matched.text).not.toContain("ignored.css");
     expect(matched.text).not.toContain("return card");
 
     const empty = mkdtempSync(join(tmpdir(), "code-shape-empty-match-dir-"));
     roots.push(empty);
     expect(shapeTarget(empty, { match: "(" })).rejects.toThrow("Invalid --match regex: unclosed group");
+  });
+
+  test("ranks matched files and symbol branches while preserving nesting", async () => {
+    const source = `function weak() { return "shape"; }
+class Permissions {
+  generic() { return "shape"; }
+  exact() { return "read path gates"; }
+}
+`;
+    const ranked = await shapeSource("ranked.ts", source, { match: "read path gates|shape" });
+    expect(ranked.text).toBe(
+      "ranked.ts\n" +
+        "  type Permissions [2-5]\n" +
+        "    fn exact [4]\n" +
+        "    fn generic [3]\n" +
+        "  fn weak [1]",
+    );
+
+    const root = mkdtempSync(join(tmpdir(), "code-shape-ranked-dir-"));
+    roots.push(root);
+    writeFileSync(
+      join(root, "a-generic.ts"),
+      Array.from({ length: 12 }, (_, index) => `function generic${index}() { return "shape"; }`).join("\n"),
+    );
+    writeFileSync(join(root, "z-exact.ts"), 'function exact() { return "read path gates"; }\n');
+
+    const directory = await shapeTarget(root, { glob: "*.ts", match: "read path gates|shape" }, undefined, "src");
+    expect(directory.text.startsWith("z-exact.ts\n  fn exact [1]\n")).toBe(true);
+    expect(directory.text).toContain("a-generic.ts");
+    expect(directory.text).toContain("[+1 owners]");
+    expect(directory.text).not.toContain("generic11");
   });
 
   test("includes normalized parameter names only when requested", async () => {

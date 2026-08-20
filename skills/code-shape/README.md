@@ -4,7 +4,7 @@ Human-facing documentation. Agent Skills loaders discover and load `SKILL.md`; t
 
 Code Shape answers two questions with little output: what is in this file, and where is it? It returns declaration or data-key names, nesting, and locations. It does not return source, signatures, modifiers, or values. Documentation summaries and normalized parameter names are opt-in with `--docs` and `--params`.
 
-Regex discovery maps case-insensitive source matches to their deepest enclosing symbols. One expression can cover several spellings with `|`. Results contain match locations and owner ranges, never matched source. Discovery returns at most 12 owners and requires `rg`.
+Regex discovery maps case-insensitive source matches to their deepest enclosing symbols. One expression can cover several spellings with `|`. Longer matches rank first, then ownership and repeated matches break ties. Best descendant rank propagates through symbol branches and files, so output keeps its shape while putting likely targets first. Results contain match locations and owner ranges, never matched source. Discovery returns at most 12 owners and requires `rg`.
 
 Documentation mode recognizes common JSDoc and Doxygen blocks, language line-doc conventions, Python and Emacs Lisp docstrings, and Julia leading docstrings. It returns only the first prose paragraph, capped at 200 characters. Tags such as `@param` are omitted.
 

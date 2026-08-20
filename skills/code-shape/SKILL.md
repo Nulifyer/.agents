@@ -14,10 +14,10 @@ curl -Ls <raw-url> | bun <skill-directory>/scripts/code-shape.ts - <name.ext> [-
 
 `<skill-directory>` is this skill's directory. A folder scans supported files recursively. A quoted folder-relative glob narrows it. `*.cs,*.cshtml` scans the folder root; use `**/` for recursion.
 
-When the responsible symbol is unknown, use one `--match` expression with regex alternatives instead of repeated searches. Matching is case-insensitive. It scans source internally, deduplicates matches by their deepest enclosing symbol, and returns at most 12 owners without matched source. Ripgrep regex syntax applies.
+When the responsible symbol is unknown, use one `--match` expression with regex alternatives instead of repeated searches. Matching is case-insensitive. It scans source internally, deduplicates matches by their deepest enclosing symbol, and returns at most 12 owners without matched source. Longer matches rank first. Ranking propagates through enclosing symbols and files, while output keeps file and symbol nesting. Ripgrep regex syntax applies.
 
 `--symbol` finds an exact declaration name. `--line` finds its enclosing declaration. These three focus modes are mutually exclusive. `--docs` adds bounded, normalized documentation summaries. `--params` adds up to 12 normalized function parameter names while omitting types and defaults. Folder detail options require `--symbol` or `--match`. For stdin, `<name.ext>` selects the language.
 
-Output is `kind name [start-end]`, with indentation for nesting. Lines are one-based and inclusive. `[b<start>-<end>]` means zero-based, end-exclusive byte locations for long one-line input. Kinds: `fn`, `var`, `prop`, `type`, `impl`, `mod`, `sec`, `sel`, `elem`, `key`.
+Output is `kind name [start-end]`, with indentation for nesting. Match output starts with each ranked file and places its strongest symbol branch first. `@<line>` marks a match inside a wider owner range. Lines are one-based and inclusive. `[b<start>-<end>]` and `@b<offset>` are zero-based byte locations for long one-line input. Kinds: `fn`, `var`, `prop`, `type`, `impl`, `mod`, `sec`, `sel`, `elem`, `key`.
 
 Tree-sitter parses original text and can recover partial outlines from syntax errors. Binary or compressed input is rejected. Use returned locations to choose source ranges, then read source before editing or concluding.
