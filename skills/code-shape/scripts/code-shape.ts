@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { resolve } from "node:path";
-import { shapeTarget, type ShapeTargetOptions } from "./lib/index.ts";
+import { shapeBytes, shapeTarget, type ShapeTargetOptions } from "./lib/index.ts";
 
 type CliOptions = ShapeTargetOptions & {
   path: string;
@@ -9,7 +9,7 @@ type CliOptions = ShapeTargetOptions & {
 };
 
 function usage(): string {
-  return "Usage: code-shape <path> [glob] [--symbol <name> | --line <number>] [--depth <number>] [--max-items <number>] [--json]";
+  return "Usage: code-shape <path> [glob] [--match <regex> | --symbol <name> | --line <number>] [--docs] [--params]\n       code-shape - <name> [--match <regex> | --symbol <name> | --line <number>] [--docs] [--params]";
 }
 
 function integer(value: string | undefined, flag: string, minimum: number, maximum?: number): number {
@@ -26,8 +26,11 @@ function parseArgs(args: string[]): CliOptions | undefined {
   let glob: string | undefined;
   let symbol: string | undefined;
   let line: number | undefined;
+  let match: string | undefined;
   let depth: number | undefined;
   let maxItems: number | undefined;
+  let docs = false;
+  let params = false;
   let json = false;
 
   for (let index = 0; index < args.length; index++) {
@@ -35,6 +38,19 @@ function parseArgs(args: string[]): CliOptions | undefined {
     if (argument === "--help" || argument === "-h") return undefined;
     if (argument === "--json") {
       json = true;
+      continue;
+    }
+    if (argument === "--docs") {
+      docs = true;
+      continue;
+    }
+    if (argument === "--params") {
+      params = true;
+      continue;
+    }
+    if (argument === "--match") {
+      match = args[++index];
+      if (!match) throw new Error("--match requires a regex");
       continue;
     }
     if (argument === "--symbol") {
@@ -54,6 +70,10 @@ function parseArgs(args: string[]): CliOptions | undefined {
       maxItems = integer(args[++index], "--max-items", 1, 500);
       continue;
     }
+    if (argument === "-" && !path) {
+      path = argument;
+      continue;
+    }
     if (argument?.startsWith("-")) throw new Error(`Unknown option: ${argument}`);
     if (!path) path = argument;
     else if (!glob) glob = argument;
@@ -61,8 +81,10 @@ function parseArgs(args: string[]): CliOptions | undefined {
   }
 
   if (!path) throw new Error("A file path is required");
-  if (symbol && line !== undefined) throw new Error("Use either --symbol or --line, not both");
-  return { path, glob, symbol, line, depth, maxItems, json };
+  if (path === "-" && !glob) throw new Error("Stdin requires a filename for language detection");
+  const focusCount = Number(Boolean(symbol)) + Number(line !== undefined) + Number(match !== undefined);
+  if (focusCount > 1) throw new Error("Use only one of --match, --symbol, or --line");
+  return { path, glob, symbol, line, match, depth, maxItems, docs, params, json };
 }
 
 async function main(): Promise<void> {
@@ -73,7 +95,11 @@ async function main(): Promise<void> {
   }
 
   const { path, json, ...shapeOptions } = options;
-  const result = await shapeTarget(resolve(process.cwd(), path), shapeOptions, undefined, path);
+  const result = await (async () => {
+    if (path !== "-") return shapeTarget(resolve(process.cwd(), path), shapeOptions, undefined, path);
+    const { glob, ...sourceOptions } = shapeOptions;
+    return shapeBytes(glob as string, Buffer.from(await Bun.stdin.arrayBuffer()), sourceOptions);
+  })();
   if (!json) {
     console.log(result.text);
     return;
@@ -85,7 +111,6 @@ async function main(): Promise<void> {
 if (import.meta.main) {
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
-    console.error(usage());
     process.exitCode = 1;
   });
 }

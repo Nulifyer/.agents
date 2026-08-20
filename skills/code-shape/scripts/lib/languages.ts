@@ -151,7 +151,10 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
     fileNames: [".bashrc", ".bash_profile", ".zshrc", ".zprofile"],
     packageName: "tree-sitter-bash",
     wasmFile: "tree-sitter-bash.wasm",
-    query: "(function_definition) @function",
+    query: `
+(function_definition) @function
+(variable_assignment) @constant
+`,
   },
   {
     id: "c",
@@ -256,7 +259,7 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
     packageName: "tree-sitter-wasm",
     wasmFile: "out/haskell/tree-sitter-haskell.wasm",
     query: `
-(module) @module
+(header (module) @module)
 (data_type) @type
 (newtype) @type
 (type_synomym) @type
@@ -478,6 +481,8 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
 (razor_model_directive) @section
 (razor_inherits_directive) @section
 (razor_block) @section
+(razor_section) @section
+(element) @element
 (class_declaration) @class
 (record_declaration) @class
 (struct_declaration) @struct
@@ -517,10 +522,9 @@ const LANGUAGE_SPECS: LanguageSpec[] = [
     packageName: "tree-sitter-wasm",
     wasmFile: "out/query/tree-sitter-query.wasm",
     query: `
-(named_node) @section
-(anonymous_node) @section
-(field_definition) @field
-(capture) @property
+(program (list) @section)
+(program (named_node) @section)
+(program (anonymous_node) @section)
 `,
   },
   {

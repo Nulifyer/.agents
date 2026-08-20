@@ -22,6 +22,20 @@ function binaryKind(bytes: Buffer): string | undefined {
   return undefined;
 }
 
+export async function shapeBytes(
+  displayPath: string,
+  bytes: Buffer,
+  options: ShapeOptions = {},
+  signal?: AbortSignal,
+): Promise<ShapeResult> {
+  if (bytes.byteLength > MAX_FILE_BYTES) {
+    throw new Error(`Input exceeds the ${MAX_FILE_BYTES.toLocaleString()} byte shape limit`);
+  }
+  const kind = binaryKind(bytes);
+  if (kind) throw new UnshapableFileError(kind, displayPath);
+  return shapeSource(displayPath, bytes.toString("utf8"), options, signal);
+}
+
 export async function shapeFile(
   filePath: string,
   options: ShapeOptions = {},
@@ -34,12 +48,5 @@ export async function shapeFile(
     throw new Error(`File exceeds the ${MAX_FILE_BYTES.toLocaleString()} byte shape limit`);
   }
 
-  const bytes = await readFile(filePath);
-  const kind = binaryKind(bytes);
-  if (kind) throw new UnshapableFileError(kind, displayPath);
-  const source = bytes.toString("utf8");
-  if (Buffer.byteLength(source, "utf8") > MAX_FILE_BYTES) {
-    throw new Error(`File exceeds the ${MAX_FILE_BYTES.toLocaleString()} byte shape limit`);
-  }
-  return shapeSource(displayPath, source, options, signal);
+  return shapeBytes(displayPath, await readFile(filePath), options, signal);
 }

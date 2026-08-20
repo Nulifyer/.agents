@@ -2,6 +2,12 @@ import { type Node as SyntaxNode, Parser, Query } from "web-tree-sitter";
 import { detectLanguage, loadShapeLanguage, supportedLanguages } from "./languages.ts";
 
 const DEFAULT_MAX_ITEMS = 200;
+const DEFAULT_MATCH_ITEMS = 12;
+const MAX_DOCS = 40;
+const MAX_DOC_CHARS = 200;
+const MAX_MATCH_PATTERN_CHARS = 500;
+const MAX_SOURCE_MATCHES = 2_000;
+const MAX_PARAMETERS_PER_SYMBOL = 12;
 const MAX_EXTRACTED_ITEMS = 2_000;
 const PARSE_BUDGET_MS = 2_000;
 
@@ -59,6 +65,9 @@ export type CodeSymbol = {
   name: string;
   startLine: number;
   endLine: number;
+  doc?: string;
+  parameters?: string[];
+  omittedParameterCount?: number;
   children: CodeSymbol[];
 };
 
@@ -67,8 +76,12 @@ type IndexedSymbol = {
   name: string;
   startLine: number;
   endLine: number;
+  startColumn: number;
   startIndex: number;
   endIndex: number;
+  doc?: string;
+  parameters?: string[];
+  omittedParameterCount?: number;
   children: IndexedSymbol[];
 };
 
@@ -82,21 +95,355 @@ export type ShapeResult = {
   omittedCount: number;
   queryLimited: boolean;
   focus?: string;
+  docCount?: number;
+  omittedDocCount?: number;
+  matchCount?: number;
+  omittedMatchCount?: number;
+  matches?: ShapeMatch[];
   symbols: CodeSymbol[];
   text: string;
+};
+
+export type ShapeMatch = {
+  path: string;
+  line: number;
+  kind: ShapeKind | "file";
+  name?: string;
+  startLine?: number;
+  endLine?: number;
+  doc?: string;
+  parameters?: string[];
+  omittedParameterCount?: number;
 };
 
 export type ShapeOptions = {
   symbol?: string;
   line?: number;
+  match?: string;
   depth?: number;
   maxItems?: number;
+  docs?: boolean;
+  params?: boolean;
 };
 
 function logicalLineCount(source: string): number {
   if (!source) return 0;
   const newlines = source.match(/\n/g)?.length ?? 0;
   return newlines + (source.endsWith("\n") ? 0 : 1);
+}
+
+type SourceMatch = {
+  startIndex: number;
+  line: number;
+};
+
+type RipgrepMatch = {
+  type: "match";
+  data: {
+    absolute_offset: number;
+    line_number: number;
+    submatches: Array<{ start: number }>;
+  };
+};
+
+async function sourceMatches(source: string, pattern: string, signal?: AbortSignal): Promise<SourceMatch[]> {
+  if (!pattern) throw new Error("--match requires a regex");
+  if (pattern.length > MAX_MATCH_PATTERN_CHARS) {
+    throw new Error(`--match regex exceeds ${MAX_MATCH_PATTERN_CHARS} characters`);
+  }
+  if (signal?.aborted) throw new Error("shape was cancelled");
+
+  const process = (() => {
+    try {
+      return Bun.spawn(
+        ["rg", "--json", "--ignore-case", "--max-count", String(MAX_SOURCE_MATCHES), "-e", pattern, "-"],
+        {
+          stdin: Buffer.from(source),
+          stdout: "pipe",
+          stderr: "pipe",
+          signal,
+        },
+      );
+    } catch {
+      throw new Error("--match requires ripgrep (rg)");
+    }
+  })();
+
+  const [exitCode, stdout, stderr] = await Promise.all([
+    process.exited,
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+  ]);
+  if (signal?.aborted) throw new Error("shape was cancelled");
+  if (exitCode === 1) return [];
+  if (exitCode !== 0) {
+    const reason = stderr
+      .trim()
+      .split("\n")
+      .findLast((line) => line.trim().startsWith("error:"))
+      ?.replace(/^error:\s*/, "");
+    throw new Error(`Invalid --match regex${reason ? `: ${reason}` : ""}`);
+  }
+
+  const matches: SourceMatch[] = [];
+  for (const line of stdout.split("\n")) {
+    if (!line || matches.length >= MAX_SOURCE_MATCHES) break;
+    const event = JSON.parse(line) as { type: string } | RipgrepMatch;
+    if (event.type !== "match") continue;
+    const match = event as RipgrepMatch;
+    for (const submatch of match.data.submatches) {
+      matches.push({
+        startIndex: match.data.absolute_offset + submatch.start,
+        line: match.data.line_number,
+      });
+      if (matches.length >= MAX_SOURCE_MATCHES) break;
+    }
+  }
+  return matches;
+}
+
+export async function validateMatchPattern(pattern: string, signal?: AbortSignal): Promise<void> {
+  await sourceMatches("", pattern, signal);
+}
+
+function trimDoc(text: string): string | undefined {
+  const summary = text.match(/<summary\b[^>]*>([\s\S]*?)<\/summary>/i)?.[1] ?? text;
+  const lines: string[] = [];
+  for (const rawLine of summary.replaceAll("\r", "").split("\n")) {
+    let line = rawLine
+      .replace(/^\s*\/\*\*?\s?/, "")
+      .replace(/\s*\*\/\s*$/, "")
+      .replace(/^\s*\*\s?/, "")
+      .replace(/^\s*(?:\/\/[/!]?|--\s*\||--|---+|;;;+|##|#)\s?/, "")
+      .trim();
+    const proseTag = line.match(/^@(?:dev|notice|summary|description)\b\s*(.*)$/i);
+    if (proseTag) line = proseTag[1]?.trim() ?? "";
+    else if (/^(?:@\w+|<(?:param|returns?|remarks?|example|exception|typeparam)\b)/i.test(line)) break;
+    if (!line && lines.length > 0) break;
+    if (line) lines.push(line);
+  }
+  const value = lines
+    .join(" ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!value) return undefined;
+  if (value.length <= MAX_DOC_CHARS) return value;
+  const clipped = value.slice(0, MAX_DOC_CHARS + 1);
+  const boundary = Math.max(clipped.lastIndexOf(". "), clipped.lastIndexOf("; "), clipped.lastIndexOf(" "));
+  return `${clipped.slice(0, boundary > MAX_DOC_CHARS / 2 ? boundary + 1 : MAX_DOC_CHARS).trim()}...`;
+}
+
+function leadingDoc(item: SyntaxNode, language: string, source: string): string | undefined {
+  const before = source.slice(Math.max(0, item.startIndex - 8_000), item.startIndex);
+  const blockStart = before.lastIndexOf("/**");
+  const block = blockStart >= 0
+    ? before.slice(blockStart).match(/^\/\*\*([\s\S]*?)\*\/[ \t]*(?:\r?\n[ \t]*)?$/)
+    : undefined;
+  if (block?.[1]) return trimDoc(block[1]);
+
+  if (language === "julia") {
+    const string = before.match(/(?:^|\n)\s*(?:raw)?("""|''')([\s\S]*?)\1[ \t]*(?:\r?\n[ \t]*)?$/);
+    if (string?.[2]) return trimDoc(string[2]);
+  }
+
+  const prefixes: Partial<Record<string, RegExp>> = {
+    bash: /^\s*##\s?/,
+    csharp: /^\s*\/\/\/\s?/,
+    dart: /^\s*\/\/\/\s?/,
+    elisp: /^\s*;;;+\s?/,
+    go: /^\s*\/\/\s?/,
+    haskell: /^\s*--(?:\s*\|)?\s?/,
+    lua: /^\s*---+\s?/,
+    "objective-c": /^\s*\/\/\/\s?/,
+    razor: /^\s*\/\/\/\s?/,
+    rescript: /^\s*\/\/\/\s?/,
+    ruby: /^\s*#\s?/,
+    rust: /^\s*\/\/[/!]\s?/,
+    scala: /^\s*\/\/\/\s?/,
+    solidity: /^\s*\/\/\/\s?/,
+    swift: /^\s*\/\/\/\s?/,
+    systemverilog: /^\s*\/\/\/\s?/,
+    typescript: /^\s*\/\/\/\s?/,
+    tsx: /^\s*\/\/\/\s?/,
+  };
+  const prefix = prefixes[language];
+  if (!prefix) return undefined;
+  const sourceLines = source.slice(0, item.startIndex).replaceAll("\r", "").split("\n");
+  if (sourceLines.at(-1) === "") sourceLines.pop();
+  const collected: string[] = [];
+  for (let index = sourceLines.length - 1; index >= 0; index--) {
+    const line = sourceLines[index] as string;
+    if (!prefix.test(line)) break;
+    collected.unshift(line.replace(prefix, ""));
+  }
+  return collected.length ? trimDoc(collected.join("\n")) : undefined;
+}
+
+function pythonDoc(definition: SyntaxNode): string | undefined {
+  const body = definition.childForFieldName("body");
+  const first = body?.namedChildren[0];
+  if (first?.type !== "expression_statement") return undefined;
+  const string = firstDescendant(first, ["string", "concatenated_string"]);
+  if (!string) return undefined;
+  const match = string.text.match(/^[rubf]*("""|''')([\s\S]*?)\1$/i);
+  return match?.[2] ? trimDoc(match[2]) : undefined;
+}
+
+function elispDoc(definition: SyntaxNode): string | undefined {
+  const docstring = definition.childForFieldName("docstring")?.text;
+  if (!docstring) return undefined;
+  return trimDoc(docstring.replace(/^"|"$/g, "").replaceAll("\\n", "\n"));
+}
+
+function documentationFor(item: SyntaxNode, definition: SyntaxNode, language: string, source: string): string | undefined {
+  if (language === "python") return pythonDoc(definition) ?? leadingDoc(item, language, source);
+  if (language === "elisp") return elispDoc(definition) ?? leadingDoc(item, language, source);
+  return leadingDoc(item, language, source);
+}
+
+const PARAMETER_CONTAINERS = new Set([
+  "argument_list",
+  "formal_parameter_list",
+  "formal_parameters",
+  "function_value_parameters",
+  "list",
+  "method_parameters",
+  "parameter_list",
+  "parameters",
+  "patterns",
+  "tf_port_list",
+]);
+
+const PARAMETER_WRAPPERS = new Set([
+  "optional_formal_parameters",
+  "parameters",
+  "required_formal_parameters",
+]);
+
+const PARAMETER_IDENTIFIER_TYPES = new Set([
+  "field_identifier",
+  "identifier",
+  "name",
+  "self",
+  "simple_identifier",
+  "symbol",
+  "value_identifier",
+  "value_name",
+  "value_pattern",
+  "variable",
+  "variable_name",
+]);
+
+function parameterNodes(definition: SyntaxNode, language: string): SyntaxNode[] | undefined {
+  const direct =
+    definition.childForFieldName("parameters") ??
+    definition.childForFieldName("patterns") ??
+    (language === "julia" ? firstDescendant(definition, "argument_list") : undefined) ??
+    firstDescendant(definition, [...PARAMETER_CONTAINERS].filter((type) => type !== "argument_list"));
+
+  if (direct) {
+    const children: SyntaxNode[] = [];
+    for (const child of direct.namedChildren) {
+      if (!child) continue;
+      if (PARAMETER_WRAPPERS.has(child.type)) {
+        children.push(...child.namedChildren.filter((item): item is SyntaxNode => item !== null));
+      } else {
+        children.push(child);
+      }
+    }
+    return children;
+  }
+
+  const single = firstDescendant(definition, "arrow_function")?.childForFieldName("parameter");
+  if (single) return [single];
+
+  if (language === "rescript") {
+    const parameter = firstDescendant(definition, "function")?.childForFieldName("parameter");
+    if (parameter) return [parameter];
+  }
+
+  if (language === "ocaml") {
+    const binding = firstDescendant(definition, "let_binding");
+    const parameters = binding?.namedChildren.filter(
+      (child): child is SyntaxNode => child !== null && child.type === "parameter",
+    );
+    if (parameters?.length) return parameters;
+  }
+
+  if (language === "objective-c") {
+    const parameters = definition.namedChildren.filter(
+      (child): child is SyntaxNode => child !== null && child.type === "method_parameter",
+    );
+    if (parameters.length) return parameters;
+  }
+
+  if (["solidity", "swift", "tlaplus"].includes(language)) {
+    const fields = definition.childrenForFieldName("parameter").filter((child): child is SyntaxNode => child !== null);
+    if (fields.length) return fields;
+    return definition.namedChildren.filter((child): child is SyntaxNode => child !== null && child.type === "parameter");
+  }
+  return undefined;
+}
+
+function parameterIdentifiers(node: SyntaxNode): string[] {
+  if (PARAMETER_IDENTIFIER_TYPES.has(node.type)) {
+    const name = node.text.trim().replace(/^[$@]+/, "");
+    return /^[\p{L}_][\p{L}\p{N}_$-]*$/u.test(name) ? [name] : [];
+  }
+  const direct = node.namedChildren.filter(
+    (child): child is SyntaxNode => child !== null && PARAMETER_IDENTIFIER_TYPES.has(child.type),
+  );
+  const candidates = direct.length
+    ? direct
+    : node.descendantsOfType([...PARAMETER_IDENTIFIER_TYPES]).filter((child): child is SyntaxNode => child !== null);
+  return candidates
+    .map((candidate) => candidate.text.trim().replace(/^[$@]+/, ""))
+    .filter((name) => /^[\p{L}_][\p{L}\p{N}_$-]*$/u.test(name));
+}
+
+function parameterNames(definition: SyntaxNode, language: string): { names: string[]; omitted: number } | undefined {
+  const nodes = parameterNodes(definition, language);
+  if (!nodes) return undefined;
+
+  const names: string[] = [];
+  let elispRest = false;
+  for (const node of nodes) {
+    if (language === "elisp" && node.type === "symbol" && node.text.startsWith("&")) {
+      elispRest = node.text === "&rest";
+      continue;
+    }
+    if (/^(?:comment|default_value|number_literal|operator|primitive_type|type_annotation|type_identifier|user_type)$/.test(node.type)) continue;
+
+    const binding =
+      node.childForFieldName("name") ??
+      node.childForFieldName("pattern") ??
+      node.childForFieldName("declarator") ??
+      node;
+    const destructured = /(?:array|dictionary|list|object|record|struct|tuple)_pattern/.test(binding.type)
+      ? /(?:object|dictionary|record|struct)/.test(binding.type)
+        ? "{}"
+        : "[]"
+      : undefined;
+    const rest = elispRest || /(?:rest|spread|splat|vararg|variadic)/.test(`${node.type} ${binding.type}`);
+    const found = destructured ? [destructured] : parameterIdentifiers(binding);
+    const selected = language === "swift" && found.length > 1
+      ? [found.at(-1) as string]
+      : language === "julia" && found.length > 1
+        ? [found[0] as string]
+        : found;
+    if (selected.length === 0 && rest) names.push("...");
+    else names.push(...selected.map((name) => (rest && name !== "..." ? `...${name}` : name)));
+    elispRest = false;
+  }
+
+  return {
+    names: names.slice(0, MAX_PARAMETERS_PER_SYMBOL),
+    omitted: Math.max(0, names.length - MAX_PARAMETERS_PER_SYMBOL),
+  };
 }
 
 function inclusiveEndLine(node: SyntaxNode): number {
@@ -148,7 +495,8 @@ function firstNamedChild(node: SyntaxNode): SyntaxNode | undefined {
 }
 
 function htmlName(node: SyntaxNode): string | undefined {
-  const tag = firstDescendant(node, "tag_name")?.text;
+  const opening = node.text.match(/^<([\w:-]+)([^>]*)>/);
+  const tag = firstDescendant(node, "tag_name")?.text ?? opening?.[1];
   if (!tag) return undefined;
   const startTag = firstDescendant(node, ["start_tag", "self_closing_tag"]);
   const attributes = startTag?.descendantsOfType("attribute") ?? [];
@@ -159,6 +507,12 @@ function htmlName(node: SyntaxNode): string | undefined {
     const value = firstDescendant(attribute, "attribute_value")?.text;
     if (name === "id" && value) suffix += `#${value}`;
     if (name === "class" && value) suffix += value.split(/\s+/).filter(Boolean).map((item) => `.${item}`).join("");
+  }
+  if (attributes.length === 0 && opening?.[2]) {
+    const id = opening[2].match(/\bid\s*=\s*["']([^"']+)["']/)?.[1];
+    const classes = opening[2].match(/\bclass\s*=\s*["']([^"']+)["']/)?.[1];
+    if (id) suffix += `#${id}`;
+    if (classes) suffix += classes.split(/\s+/).filter(Boolean).map((item) => `.${item}`).join("");
   }
   return `${tag}${suffix}`;
 }
@@ -178,9 +532,11 @@ function symbolName(node: SyntaxNode, kind: SymbolKind, language: string): strin
     return key ? cleanName(key.text) : "key";
   }
   if (language === "toml" && kind === "section") {
-    const keys = node
-      .descendantsOfType(["bare_key", "quoted_key"])
-      .filter((key): key is SyntaxNode => key !== null)
+    const heading = node.namedChildren.find((child) =>
+      child ? ["bare_key", "quoted_key", "dotted_key"].includes(child.type) : false,
+    );
+    const keys = (heading?.type === "dotted_key" ? heading.descendantsOfType(["bare_key", "quoted_key"]) : [heading])
+      .filter((key): key is SyntaxNode => key !== null && key !== undefined)
       .map((key) => cleanName(key.text));
     return keys.join(".") || "section";
   }
@@ -190,11 +546,20 @@ function symbolName(node: SyntaxNode, kind: SymbolKind, language: string): strin
   if (language === "vue" && kind === "section") return firstDescendant(node, "tag_name")?.text ?? "section";
   if (language === "embedded-template") return node.type === "output_directive" ? "output" : "directive";
   if (language === "razor" && kind === "section") {
+    if (node.type === "razor_section") return firstDescendant(node, "identifier")?.text ?? "section";
     return node.type === "razor_block" ? "code" : node.type.replace(/^razor_|_directive$/g, "");
   }
   if (language === "tree-sitter-query") {
     if (node.type === "capture") return `@${firstDescendant(node, "identifier")?.text ?? "capture"}`;
-    return firstDescendant(node, "identifier")?.text ?? node.type;
+    const captures = [...new Set(node.descendantsOfType("capture").map((capture) => capture?.text).filter(Boolean))];
+    return captures.slice(0, 3).join(",") || firstDescendant(node, "identifier")?.text || node.type;
+  }
+  if (language === "haskell") {
+    if (kind === "module") return node.text.replace(/\.$/, "");
+    if (kind === "function") {
+      const variable = firstDescendant(node, "variable");
+      if (variable) return variable.text;
+    }
   }
   if (language === "regex") return firstDescendant(node, "group_name")?.text ?? node.type;
   if (language === "systemrdl" && node.type === "component_named_def") {
@@ -292,6 +657,34 @@ function nestSymbols(symbols: IndexedSymbol[]): IndexedSymbol[] {
   return roots;
 }
 
+function mergeHaskellFunctions(symbols: IndexedSymbol[]): void {
+  const merged: IndexedSymbol[] = [];
+  for (const symbol of symbols) {
+    const previous = merged.findLast(
+      (candidate) =>
+        candidate.kind === "function" &&
+        candidate.name === symbol.name &&
+        candidate.startColumn === symbol.startColumn,
+    );
+    if (
+      previous?.kind === "function" &&
+      symbol.kind === "function" &&
+      previous.name === symbol.name &&
+      symbol.startLine <= previous.endLine + 2
+    ) {
+      previous.endLine = Math.max(previous.endLine, symbol.endLine);
+      previous.endIndex = Math.max(previous.endIndex, symbol.endIndex);
+      if (previous.parameters === undefined && symbol.parameters !== undefined) {
+        previous.parameters = symbol.parameters;
+        previous.omittedParameterCount = symbol.omittedParameterCount;
+      }
+      continue;
+    }
+    merged.push(symbol);
+  }
+  symbols.splice(0, symbols.length, ...merged);
+}
+
 function flatten(symbols: IndexedSymbol[]): IndexedSymbol[] {
   const result: IndexedSymbol[] = [];
   const visit = (items: IndexedSymbol[]) => {
@@ -319,13 +712,84 @@ function findPath(roots: IndexedSymbol[], target: IndexedSymbol): IndexedSymbol[
 }
 
 function publicSymbols(symbols: IndexedSymbol[]): CodeSymbol[] {
-  return symbols.map(({ kind, name, startLine, endLine, children }) => ({
+  return symbols.map(({ kind, name, startLine, endLine, doc, parameters, omittedParameterCount, children }) => ({
     kind: SHAPE_KIND[kind],
     name,
     startLine,
     endLine,
+    ...(doc ? { doc } : {}),
+    ...(parameters ? { parameters } : {}),
+    ...(omittedParameterCount ? { omittedParameterCount } : {}),
     children: publicSymbols(children),
   }));
+}
+
+function deepestOwner(symbols: IndexedSymbol[], startIndex: number): IndexedSymbol | undefined {
+  return symbols
+    .filter((symbol) => symbol.startIndex <= startIndex && startIndex < symbol.endIndex)
+    .sort((left, right) => left.endIndex - left.startIndex - (right.endIndex - right.startIndex))[0];
+}
+
+function qualifiedName(roots: IndexedSymbol[], symbol: IndexedSymbol): string {
+  return findPath(roots, symbol)
+    .map((item) => item.name)
+    .join(".");
+}
+
+function matchedOwners(
+  path: string,
+  roots: IndexedSymbol[],
+  flat: IndexedSymbol[],
+  sourceMatches: SourceMatch[],
+  maxItems: number,
+  useByteRanges: boolean,
+): { matches: ShapeMatch[]; lines: string[]; omitted: number } {
+  const candidates: Array<{ match: ShapeMatch; startIndex?: number; endIndex?: number }> = [];
+  const seen = new Set<string>();
+  for (const match of sourceMatches) {
+    const owner = deepestOwner(flat, match.startIndex);
+    const key = owner ? `${owner.startIndex}:${owner.endIndex}:${owner.name}` : `file:${match.line}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(
+      owner
+        ? {
+            startIndex: owner.startIndex,
+            endIndex: owner.endIndex,
+            match: {
+            path,
+            line: match.line,
+            kind: SHAPE_KIND[owner.kind],
+            name: qualifiedName(roots, owner),
+            startLine: owner.startLine,
+            endLine: owner.endLine,
+            ...(owner.doc ? { doc: owner.doc } : {}),
+            ...(owner.parameters !== undefined ? { parameters: owner.parameters } : {}),
+            ...(owner.omittedParameterCount ? { omittedParameterCount: owner.omittedParameterCount } : {}),
+            },
+          }
+        : { match: { path, line: match.line, kind: "file" } },
+    );
+  }
+
+  const selected = candidates.slice(0, maxItems);
+  const lines = selected.map(({ match, startIndex, endIndex }) => {
+    const parameters = match.parameters
+      ? `(${match.parameters.join(",")}${match.omittedParameterCount ? `,+${match.omittedParameterCount}` : ""})`
+      : "";
+    const label = match.kind === "file" ? "file" : `${match.kind} ${match.name}${parameters}`;
+    const range = match.startLine === undefined
+      ? ""
+      : useByteRanges
+        ? ` [b${startIndex}-${endIndex}]`
+        : ` [${match.startLine === match.endLine ? match.startLine : `${match.startLine}-${match.endLine}`}]`;
+    return `${path}:${match.line} ${label}${range}${match.doc ? ` | ${match.doc}` : ""}`;
+  });
+  return {
+    matches: selected.map((candidate) => candidate.match),
+    lines,
+    omitted: Math.max(0, candidates.length - selected.length),
+  };
 }
 
 function formatSymbols(
@@ -333,10 +797,12 @@ function formatSymbols(
   depth: number,
   maxItems: number,
   useByteRanges: boolean,
-): { lines: string[]; shown: number; omitted: number } {
+): { lines: string[]; shown: number; omitted: number; docsShown: number; docsOmitted: number } {
   const lines: string[] = [];
   let shown = 0;
   let omitted = 0;
+  let docsShown = 0;
+  let docsOmitted = 0;
   const visit = (items: IndexedSymbol[], level: number) => {
     for (const symbol of items) {
       if (shown >= maxItems || level > depth) {
@@ -349,14 +815,28 @@ function formatSymbols(
           ? `${symbol.startLine}`
           : `${symbol.startLine}-${symbol.endLine}`;
       const shortKind = SHAPE_KIND[symbol.kind];
-      const label = symbol.name === symbol.kind && symbol.kind !== "constructor" ? shortKind : `${shortKind} ${symbol.name}`;
-      lines.push(`${"  ".repeat(level)}${label} [${range}]`);
+      const parameters = symbol.parameters
+        ? `(${symbol.parameters.join(",")}${symbol.omittedParameterCount ? `,+${symbol.omittedParameterCount}` : ""})`
+        : "";
+      const label = symbol.name === symbol.kind && symbol.kind !== "constructor"
+        ? `${shortKind}${parameters}`
+        : `${shortKind} ${symbol.name}${parameters}`;
+      let doc = "";
+      if (symbol.doc) {
+        if (docsShown < MAX_DOCS) {
+          doc = ` | ${symbol.doc}`;
+          docsShown++;
+        } else {
+          docsOmitted++;
+        }
+      }
+      lines.push(`${"  ".repeat(level)}${label} [${range}]${doc}`);
       shown++;
       visit(symbol.children, level + 1);
     }
   };
   visit(roots, 0);
-  return { lines, shown, omitted };
+  return { lines, shown, omitted, docsShown, docsOmitted };
 }
 
 export async function shapeSource(
@@ -365,10 +845,12 @@ export async function shapeSource(
   options: ShapeOptions = {},
   signal?: AbortSignal,
 ): Promise<ShapeResult> {
-  if (options.symbol && options.line !== undefined) throw new Error("Use either symbol or line focus, not both");
+  const focusCount = Number(Boolean(options.symbol)) + Number(options.line !== undefined) + Number(options.match !== undefined);
+  if (focusCount > 1) throw new Error("Use only one of symbol, line, or match focus");
   if (signal?.aborted) throw new Error("shape was cancelled");
   const spec = detectLanguage(path, source);
   if (!spec) throw new Error(`Unsupported source language for ${path}. Supported: ${supportedLanguages().join(", ")}`);
+  const regexMatches = options.match !== undefined ? await sourceMatches(source, options.match, signal) : undefined;
 
   const language = await loadShapeLanguage(spec);
   const parser = new Parser();
@@ -411,16 +893,66 @@ export async function shapeSource(
           name,
           startLine: item.startPosition.row + 1,
           endLine: inclusiveEndLine(item),
+          startColumn: item.startPosition.column,
           startIndex: item.startIndex,
           endIndex: item.endIndex,
+          doc: options.docs ? documentationFor(item, definition, spec.id, source) : undefined,
+          ...(() => {
+            if (!options.params || SHAPE_KIND[kind] !== "fn") return {};
+            const extracted = parameterNames(definition, spec.id);
+            return extracted
+              ? { parameters: extracted.names, omittedParameterCount: extracted.omitted || undefined }
+              : {};
+          })(),
           children: [],
         });
       }
       symbols.sort((left, right) => left.startIndex - right.startIndex || right.endIndex - left.endIndex);
+      if (spec.id === "haskell") mergeHaskellFunctions(symbols);
       const roots = nestSymbols(symbols);
       const flat = flatten(roots);
       const depth = Math.max(0, Math.min(options.depth ?? 4, 12));
-      const maxItems = Math.max(1, Math.min(options.maxItems ?? DEFAULT_MAX_ITEMS, 500));
+      const maxItems = Math.max(
+        1,
+        Math.min(options.maxItems ?? (options.match !== undefined ? DEFAULT_MATCH_ITEMS : DEFAULT_MAX_ITEMS), 500),
+      );
+
+      const parseErrors = countParseErrors(tree.rootNode);
+      const lineCount = logicalLineCount(source);
+      const useByteRanges = lineCount === 1 && Buffer.byteLength(source, "utf8") >= 200;
+      if (regexMatches) {
+        const matched = matchedOwners(path, roots, flat, regexMatches, maxItems, useByteRanges);
+        const queryLimited =
+          query.didExceedMatchLimit() ||
+          symbols.length >= MAX_EXTRACTED_ITEMS ||
+          regexMatches.length >= MAX_SOURCE_MATCHES;
+        const body = matched.lines.length ? matched.lines.join("\n") : "[no match]";
+        const limit = matched.omitted ? `\n[+${matched.omitted} owners]` : "";
+        const errors = parseErrors ? `\n[errors=${parseErrors}]` : "";
+        const incomplete = queryLimited ? "\n[incomplete]" : "";
+        return {
+          path,
+          language: spec.id,
+          lineCount,
+          parseErrors,
+          definitionCount: flat.length,
+          shownCount: matched.matches.length,
+          omittedCount: matched.omitted,
+          queryLimited,
+          focus: "match",
+          ...(options.docs
+            ? {
+                docCount: matched.matches.filter((match) => match.doc).length,
+                omittedDocCount: 0,
+              }
+            : {}),
+          matchCount: matched.matches.length + matched.omitted,
+          omittedMatchCount: matched.omitted,
+          matches: matched.matches,
+          symbols: [],
+          text: `${body}${limit}${errors}${incomplete}`,
+        };
+      }
 
       let selectedRoots = roots;
       let focus: string | undefined;
@@ -442,9 +974,6 @@ export async function shapeSource(
         focus = target ? findPath(roots, target).map((symbol) => symbol.name).join(" > ") : `line ${options.line}`;
       }
 
-      const parseErrors = countParseErrors(tree.rootNode);
-      const lineCount = logicalLineCount(source);
-      const useByteRanges = lineCount === 1 && Buffer.byteLength(source, "utf8") >= 200;
       const formatted = formatSymbols(selectedRoots, depth, maxItems, useByteRanges);
       const header = `${path} ${spec.id} ${lineCount.toLocaleString()}L${parseErrors ? ` errors=${parseErrors}` : ""}`;
       const focusLine = options.line !== undefined && focus ? `\n@ ${focus}` : "";
@@ -452,6 +981,7 @@ export async function shapeSource(
       const outline = formatted.lines.length ? `\n${formatted.lines.join("\n")}` : "";
       const omitted = formatted.omitted + Math.max(0, flat.length - symbols.length);
       const limit = omitted > 0 ? `\n[+${omitted} omitted]` : "";
+      const docLimit = formatted.docsOmitted > 0 ? `\n[+${formatted.docsOmitted} docs omitted]` : "";
       const queryLimited = query.didExceedMatchLimit() || symbols.length >= MAX_EXTRACTED_ITEMS;
       const incomplete = queryLimited ? "\n[incomplete]" : "";
       return {
@@ -464,8 +994,9 @@ export async function shapeSource(
         omittedCount: omitted,
         queryLimited,
         focus,
+        ...(options.docs ? { docCount: formatted.docsShown, omittedDocCount: formatted.docsOmitted } : {}),
         symbols: publicSymbols(selectedRoots),
-        text: `${header}${focusLine}${noMatches}${outline}${limit}${incomplete}`,
+        text: `${header}${focusLine}${noMatches}${outline}${limit}${docLimit}${incomplete}`,
       };
     } finally {
       tree.delete();

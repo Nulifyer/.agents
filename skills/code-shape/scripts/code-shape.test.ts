@@ -72,7 +72,7 @@ export const double = (value: number): number => value * 2;
         "  fn Run [2]",
       ],
       ["sample.kt", "class Box { fun get(): Int { return 1 } }", "type Box [1]"],
-      ["sample.sh", "run() { echo ok; }\n", "fn run [1]"],
+      ["sample.sh", "version=1\nrun() { echo ok; }\n", "var version [1]"],
     ] as const;
 
     for (const [path, source, expected] of cases) {
@@ -136,7 +136,7 @@ export const double = (value: number): number => value * 2;
       ["sample.vue", "<template><main/></template>", "vue", "  elem main"],
       ["sample.yaml", "app:\n  port: 3000", "yaml", "  key port"],
       ["Counter.razor", "@code { private int count; void Increment() { count++; } }", "razor", "  fn Increment"],
-      ["queries/tags.scm", "(function_declaration) @definition.function", "tree-sitter-query", "prop @definition.function"],
+      ["queries/tags.scm", "(function_declaration) @definition.function", "tree-sitter-query", "sec @definition.function"],
       ["sample.regex", "^(?<name>[a-z]+)(?:-(\\d+))?$", "regex", "sec name"],
     ] as const;
 
@@ -171,7 +171,7 @@ export const double = (value: number): number => value * 2;
   test("rejects unsupported files and conflicting focus", async () => {
     expect(shapeSource("notes.txt", "hello")).rejects.toThrow("Unsupported source language");
     expect(shapeSource("worker.ts", "function run() {}", { symbol: "run", line: 1 })).rejects.toThrow(
-      "either symbol or line",
+      "only one of symbol, line, or match",
     );
   });
 
@@ -239,5 +239,286 @@ export const double = (value: number): number => value * 2;
     const path = join(root, "bundle.js");
     writeFileSync(path, Buffer.from([0x1f, 0x8b, 0x08, 0x00]));
     expect(shapeTarget(path)).rejects.toThrow("[gzip]");
+  });
+
+  test("keeps audited language shapes compact and named", async () => {
+    const bash = await shapeSource("sample.sh", "version=1\nrun() { echo ok; }\n");
+    expect(bash.text).toContain("var version [1]");
+    expect(bash.text).toContain("fn run [2]");
+
+    const haskell = await shapeSource(
+      "sample.hs",
+      "module Demo where\nrun :: Int -> Int\nrun 0 = 0\nrun x = x\n",
+    );
+    expect(haskell.text).toContain("mod Demo [1]");
+    expect(haskell.text.match(/fn run/g)).toHaveLength(1);
+
+    const toml = await shapeSource("Cargo.toml", "[package]\nname = 'demo'\n[dependencies.clap]\nversion = '4'\n");
+    expect(toml.text).toContain("sec package [1-2]");
+    expect(toml.text).toContain("sec dependencies.clap [3-4]");
+
+    const query = await shapeSource("queries/highlights.scm", "[(class) (struct)] @type\n(function) @function\n");
+    expect(query.text).toContain("sec @type [1]");
+    expect(query.text).toContain("sec @function [2]");
+
+    const razor = await shapeSource("Index.cshtml", "@section hero { <main id=\"app\"><h1>Hi</h1></main> }");
+    expect(razor.text).toContain("sec hero");
+    expect(razor.text).toContain("elem main#app");
+  });
+
+  test("accepts stdin with a virtual filename", async () => {
+    const proc = Bun.spawn(
+      [process.execPath, join(import.meta.dir, "code-shape.ts"), "-", "remote.ts"],
+      { stdin: Buffer.from("export function remote() {}\n"), stdout: "pipe", stderr: "pipe" },
+    );
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("remote.ts typescript 1L\nfn remote [1]");
+
+    const matched = Bun.spawn(
+      [process.execPath, join(import.meta.dir, "code-shape.ts"), "-", "remote.ts", "--match", "needle|other"],
+      {
+        stdin: Buffer.from('export function remote() { return "needle"; }\n'),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [matchExitCode, matchStdout, matchStderr] = await Promise.all([
+      matched.exited,
+      new Response(matched.stdout).text(),
+      new Response(matched.stderr).text(),
+    ]);
+    expect(matchExitCode).toBe(0);
+    expect(matchStderr).toBe("");
+    expect(matchStdout).toContain("remote.ts:1 fn remote [1]");
+    expect(matchStdout).not.toContain("needle");
+  });
+
+  test("maps case-insensitive regex alternatives to owning symbols without source", async () => {
+    const source = `class Cards {
+  render(card: Card) {
+    button.textContent = "Add to Deck";
+    log("ADD TO DECK");
+  }
+}
+`;
+    const result = await shapeSource("cards.ts", source, {
+      match: "add\\s+to\\s+deck|addToDeck",
+      params: true,
+    });
+
+    expect(result.focus).toBe("match");
+    expect(result.matchCount).toBe(1);
+    expect(result.shownCount).toBe(1);
+    expect(result.text).toBe("cards.ts:3 fn Cards.render(card) [2-5]");
+    expect(result.text).not.toContain("Add to Deck");
+    expect(result.symbols).toEqual([]);
+    expect(result.matches?.[0]).toMatchObject({
+      path: "cards.ts",
+      line: 3,
+      kind: "fn",
+      name: "Cards.render",
+      startLine: 2,
+      endLine: 5,
+      parameters: ["card"],
+    });
+  });
+
+  test("returns file locations when regex matches have no enclosing symbol", async () => {
+    const result = await shapeSource("cards.js", "// Add to Deck\n", { match: "add.*deck" });
+    expect(result.text).toBe("cards.js:1 file");
+    expect(result.matches?.[0]).toEqual({ path: "cards.js", line: 1, kind: "file" });
+
+    expect((await shapeSource("cards.js", "function render() {}", { match: "missing" })).text).toBe("[no match]");
+  });
+
+  test("handles Unicode offsets and rejects invalid or conflicting match focus", async () => {
+    const unicode = await shapeSource(
+      "cards.js",
+      'const café = "x"; function render() { return "Add to Deck"; }',
+      { match: "add to deck" },
+    );
+    expect(unicode.text).toContain("fn render [1]");
+
+    expect(shapeSource("cards.js", "function render() {}", { match: "(" })).rejects.toThrow(
+      "Invalid --match regex: unclosed group",
+    );
+    expect(
+      shapeSource("cards.js", "function render() {}", { match: "render", symbol: "render" }),
+    ).rejects.toThrow("only one of symbol, line, or match");
+  });
+
+  test("bounds regex owners and scans a folder with one expression", async () => {
+    const source = Array.from(
+      { length: 14 },
+      (_, index) => `function job${index}() { return "needle ${index}"; }`,
+    ).join("\n");
+    const bounded = await shapeSource("jobs.js", source, { match: "needle" });
+    expect(bounded.shownCount).toBe(12);
+    expect(bounded.matchCount).toBe(14);
+    expect(bounded.omittedMatchCount).toBe(2);
+    expect(bounded.text).toContain("jobs.js:12 fn job11 [12]");
+    expect(bounded.text).toContain("[+2 owners]");
+    expect(bounded.text).not.toContain("job12");
+
+    const root = mkdtempSync(join(tmpdir(), "code-shape-match-dir-"));
+    roots.push(root);
+    writeFileSync(join(root, "cards.ts"), '/** Draws cards. */\nfunction render(card: Card) { return "Add to Deck"; }\n');
+    writeFileSync(join(root, "deck.js"), "function addToDeck(card) { return card; }\n");
+    writeFileSync(join(root, "ignored.css"), ".add-to-deck {}\n");
+
+    const matched = await shapeTarget(
+      root,
+      { glob: "*.{js,ts}", match: "add\\s+to\\s+deck|addToDeck", docs: true, params: true },
+      undefined,
+      "src",
+    );
+    expect(matched.shownCount).toBe(2);
+    expect(matched.text).toContain("cards.ts:2 fn render(card) [2] | Draws cards.");
+    expect(matched.text).toContain("deck.js:1 fn addToDeck(card) [1]");
+    expect(matched.text).not.toContain("ignored.css");
+    expect(matched.text).not.toContain("return card");
+
+    const empty = mkdtempSync(join(tmpdir(), "code-shape-empty-match-dir-"));
+    roots.push(empty);
+    expect(shapeTarget(empty, { match: "(" })).rejects.toThrow("Invalid --match regex: unclosed group");
+  });
+
+  test("includes normalized parameter names only when requested", async () => {
+    const source = "function run(input: string, options = {}, ...rest: unknown[]) {}\n";
+    const plain = await shapeSource("worker.ts", source);
+    expect(plain.text).toContain("fn run [1]");
+    expect(plain.text).not.toContain("input");
+
+    const detailed = await shapeSource("worker.ts", source, { params: true });
+    expect(detailed.text).toContain("fn run(input,options,...rest) [1]");
+    expect(detailed.text).not.toContain("string");
+    expect(detailed.text).not.toContain("unknown");
+    expect(detailed.text).not.toContain("= {}");
+    expect(detailed.symbols[0]?.parameters).toEqual(["input", "options", "...rest"]);
+
+    const patterns = await shapeSource("worker.js", "const run = ({ id }, { name }, [first]) => first", {
+      params: true,
+    });
+    expect(patterns.text).toContain("fn run({},{},[]) [1]");
+  });
+
+  test("extracts parameter names across supported language families", async () => {
+    const cases = [
+      ["worker.py", "def run(self, value: str, *args, **kwargs): pass", "fn run(self,value,...args,...kwargs)"],
+      ["worker.rs", "fn run(&self, value: i32, mut other: String) {}", "fn run(self,value,other)"],
+      ["worker.go", "func Run(ctx context.Context, values ...string) {}", "fn Run(ctx,...values)"],
+      ["worker.cpp", "int run(const char *name, int count = 1) { return 0; }", "fn run(name,count)"],
+      ["Worker.cs", "class Worker { void Run(string name, int count = 1) {} }", "fn Run(name,count)"],
+      ["Worker.java", "class Worker { void run(String name, int... values) {} }", "fn run(name,...values)"],
+      ["worker.rb", "def run(name, count = 1, *rest); end", "fn run(name,count,...rest)"],
+      ["worker.lua", "function run(name, count, ...) end", "fn run(name,count,...)"] ,
+      ["worker.hs", "run name count = name", "fn run(name,count)"],
+      ["worker.jl", "function run(name::String, count=1; flag=true) end", "fn run(name,count,flag)"],
+      ["worker.php", "<?php function run(string $name, int $count = 1) {}", "fn run(name,count)"],
+      ["worker.kt", "fun run(name: String, count: Int = 1) {}", "fn run(name,count)"],
+      ["worker.scala", "def run(name: String, count: Int = 1) = name", "fn run(name,count)"],
+      ["Worker.sol", "function run(address owner, uint256 amount) public {}", "fn run(owner,amount)"],
+      ["worker.swift", "func run(_ name: String, count: Int = 1) {}", "fn run(name,count)"],
+      ["worker.dart", "void run(String name, [int count = 1]) {}", "fn run(name,count)"],
+      ["worker.zig", "fn run(name: []const u8, count: usize) void {}", "fn run(name,count)"],
+      ["worker.el", "(defun run (name &optional count &rest rest) name)", "fn run(name,count,...rest)"],
+      ["worker.ml", "let run name ?(count = 1) ~flag = name", "fn run(name,count,flag)"],
+      [
+        "Worker.m",
+        "@interface Worker : NSObject\n- (void)runWithName:(NSString *)name count:(NSInteger)count;\n@end",
+        "fn runWithName(name,count)",
+      ],
+      ["worker.sv", "function int run(input int value, string name); endfunction", "fn run(value,name)"],
+      ["Worker.tla", "---- MODULE Worker ----\nRun(name, count) == name\n====", "fn Run(name,count)"],
+    ] as const;
+
+    for (const [path, source, expected] of cases) {
+      expect((await shapeSource(path, source, { params: true })).text).toContain(expected);
+    }
+  });
+
+  test("bounds parameter names and folder usage", async () => {
+    const names = Array.from({ length: 15 }, (_, index) => `arg${index}`).join(", ");
+    const result = await shapeSource("worker.js", `function run(${names}) {}`, { params: true });
+    expect(result.text).toContain("arg11,+3)");
+    expect(result.text).not.toContain("arg12");
+    expect(result.symbols[0]?.omittedParameterCount).toBe(3);
+
+    const root = mkdtempSync(join(tmpdir(), "code-shape-params-dir-"));
+    roots.push(root);
+    writeFileSync(join(root, "worker.ts"), "function run(input: string) {}\n");
+    expect(shapeTarget(root, { params: true })).rejects.toThrow("requires an exact symbol");
+    const focused = await shapeTarget(root, { params: true, symbol: "run" }, undefined, "src");
+    expect(focused.text).toContain("fn run(input) [1]");
+  });
+
+  test("includes normalized documentation summaries only when requested", async () => {
+    const typescript = `/** Runs queued work.
+ * Extra detail.
+ * @internal ignored
+ */
+export class Worker {
+  /** Runs one job.
+   * @param input ignored
+   */
+  run(input: string) {}
+}
+`;
+    const plain = await shapeSource("worker.ts", typescript);
+    expect(plain.text).not.toContain("Runs queued work");
+
+    const documented = await shapeSource("worker.ts", typescript, { docs: true });
+    expect(documented.text).toContain("type Worker [5-10] | Runs queued work. Extra detail.");
+    expect(documented.text).toContain("fn run [9] | Runs one job.");
+    expect(documented.text).not.toContain("@param");
+    expect(documented.symbols[0]?.doc).toBe("Runs queued work. Extra detail.");
+
+    const python = await shapeSource(
+      "box.py",
+      `class Box:\n    """Stores values.\n\n    Internal detail.\n    """\n    pass\n`,
+      { docs: true },
+    );
+    expect(python.text).toContain("type Box [1-6] | Stores values.");
+
+    const csharp = await shapeSource(
+      "Worker.cs",
+      "/// <summary>Runs C# work.</summary>\nclass Worker {}\n",
+      { docs: true },
+    );
+    expect(csharp.text).toContain("type Worker [2] | Runs C# work.");
+
+    const cases = [
+      ["worker.go", "// Run starts work.\nfunc Run() {}\n", "fn Run [2] | Run starts work."],
+      ["worker.rs", "/// Starts Rust work.\nfn run() {}\n", "fn run [2] | Starts Rust work."],
+      ["worker.hs", "-- | Starts Haskell work.\nrun x = x\n", "fn run [2] | Starts Haskell work."],
+      ["worker.lua", "--- Starts Lua work.\nfunction run() end\n", "fn run [2] | Starts Lua work."],
+      ["worker.rb", "# Starts Ruby work.\ndef run; end\n", "fn run [2] | Starts Ruby work."],
+      ["worker.el", "(defun run () \"Starts Elisp work.\" nil)\n", "fn run [1] | Starts Elisp work."],
+      ["Worker.sol", "/** @dev Starts Solidity work. */\ncontract Worker {}\n", "type Worker [2] | Starts Solidity work."],
+    ] as const;
+    for (const [path, source, expected] of cases) {
+      expect((await shapeSource(path, source, { docs: true })).text).toContain(expected);
+    }
+  });
+
+  test("bounds documentation output and folder usage", async () => {
+    const source = Array.from({ length: 42 }, (_, index) => `/** Job ${index}. */\nfunction job${index}() {}`).join("\n");
+    const result = await shapeSource("jobs.js", source, { docs: true });
+    expect(result.docCount).toBe(40);
+    expect(result.omittedDocCount).toBe(2);
+    expect(result.text).toContain("[+2 docs omitted]");
+
+    const root = mkdtempSync(join(tmpdir(), "code-shape-docs-dir-"));
+    roots.push(root);
+    writeFileSync(join(root, "worker.ts"), "/** Worker. */\nclass Worker {}\n");
+    expect(shapeTarget(root, { docs: true })).rejects.toThrow("requires an exact symbol");
+    const focused = await shapeTarget(root, { docs: true, symbol: "Worker" }, undefined, "src");
+    expect(focused.text).toContain("type Worker [2] | Worker.");
   });
 });
