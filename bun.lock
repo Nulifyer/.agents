@@ -32,6 +32,23 @@
         "web-tree-sitter": "0.25.10",
       },
     },
+    "skills/document-read": {
+      "name": "@nulifyer/document-read",
+      "version": "0.1.0",
+      "bin": {
+        "document-read": "./scripts/document-read.ts",
+      },
+    },
+    "skills/youtube-transcript": {
+      "name": "@nulifyer/youtube-transcript",
+      "version": "0.1.0",
+      "bin": {
+        "youtube-transcript": "./scripts/youtube-transcript.ts",
+      },
+      "dependencies": {
+        "@hallelx/youtube-transcript": "0.2.0",
+      },
+    },
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.5.9", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.5.9", "@biomejs/cli-darwin-x64": "2.5.9", "@biomejs/cli-linux-arm64": "2.5.9", "@biomejs/cli-linux-arm64-musl": "2.5.9", "@biomejs/cli-linux-x64": "2.5.9", "@biomejs/cli-linux-x64-musl": "2.5.9", "@biomejs/cli-win32-arm64": "2.5.9", "@biomejs/cli-win32-x64": "2.5.9" }, "bin": { "biome": "bin/biome" } }, "sha512-KkgCvdHB4IhtpHpF564plA9jo6fDOwWGQ/3jvreLzgOtRLEDoPqr7QO9qejNA8jKwDsSkAKr77hqBHnyUbIw4g=="],
@@ -52,7 +69,13 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.9", "", { "os": "win32", "cpu": "x64" }, "sha512-Yiq0H56LjXSSw/hd9YkXgSLQfzyDJzbzU2TezozxyNw+uKWAqOtqGVvBfzKRRDiaFF5avGAhHdWKx7LtDOShUw=="],
 
+    "@hallelx/youtube-transcript": ["@hallelx/youtube-transcript@0.2.0", "", { "peerDependencies": { "undici": ">=5" }, "optionalPeers": ["undici"], "bin": { "youtube-transcript": "dist/cli.js" } }, "sha512-xaUiACZo9S4YHXCqr1XIhOc3vgI2sjQf+FnFkUvxbv84J1GicC4RrjUiVWmQlMI8hJW4ztyqDZFcalXquPRpjg=="],
+
     "@nulifyer/code-shape": ["@nulifyer/code-shape@workspace:skills/code-shape"],
+
+    "@nulifyer/document-read": ["@nulifyer/document-read@workspace:skills/document-read"],
+
+    "@nulifyer/youtube-transcript": ["@nulifyer/youtube-transcript@workspace:skills/youtube-transcript"],
 
     "@tree-sitter-grammars/tree-sitter-kotlin": ["@tree-sitter-grammars/tree-sitter-kotlin@1.1.0", "", { "dependencies": { "node-addon-api": "^8.3.0", "node-gyp-build": "^4.8.4", "npm-check-updates": "^17.1.13" }, "peerDependencies": { "tree-sitter": "^0.22.4" }, "optionalPeers": ["tree-sitter"] }, "sha512-vlVXaxEE8t2kpJgfZpa8XVvxcnKw9AYtRTgy7KWjsDmAsadk06RxAT80IXOgGQnmM9i/orQn1nD84gPNUHu6DQ=="],
 
