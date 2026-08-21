@@ -99,7 +99,7 @@ export interface PictureEvidence {
 }
 
 export interface ExtractResult {
-	operation: "document_extract";
+	operation: "document_read";
 	filePath: string;
 	fileName: string;
 	fileSize: number;
@@ -225,7 +225,7 @@ const EXTENSIONS: Record<
 
 function usage(): string {
 	return [
-		"Usage: document-extract <file> [options]",
+		"Usage: document-read <file> [options]",
 		"",
 		"Options:",
 		"  --engine auto|docling|markitdown  Converter routing (default: auto)",
@@ -242,8 +242,8 @@ function usage(): string {
 		"  -h, --help                       Show this help",
 		"",
 		"Environment:",
-		"  DOCUMENT_EXTRACT_UVX_PATH        Path to uvx when it is not on PATH",
-		"  DOCUMENT_EXTRACT_CACHE_DIR       Default cache root",
+		"  DOCUMENT_READ_UVX_PATH           Path to uvx when it is not on PATH",
+		"  DOCUMENT_READ_CACHE_DIR          Default cache root",
 	].join("\n");
 }
 
@@ -533,13 +533,12 @@ function containsPath(root: string, filePath: string): boolean {
 
 function findUvx(configured?: string): string {
 	const candidate =
-		configured?.trim() ||
-		environmentVariable("DOCUMENT_EXTRACT_UVX_PATH")?.trim();
+		configured?.trim() || environmentVariable("DOCUMENT_READ_UVX_PATH")?.trim();
 	if (candidate) return candidate;
 	const discovered = Bun.which("uvx");
 	if (discovered) return discovered;
 	throw new Error(
-		"uvx is required; install Astral uv or set DOCUMENT_EXTRACT_UVX_PATH",
+		"uvx is required; install Astral uv or set DOCUMENT_READ_UVX_PATH",
 	);
 }
 
@@ -1148,8 +1147,8 @@ export async function extractDocument(
 	);
 	const cacheRoot = resolve(
 		options.cacheDir ??
-			environmentVariable("DOCUMENT_EXTRACT_CACHE_DIR") ??
-			join(tmpdir(), "agent-tools", "document-extract"),
+			environmentVariable("DOCUMENT_READ_CACHE_DIR") ??
+			join(tmpdir(), "agent-tools", "document-read"),
 	);
 	const cacheIdentity = JSON.stringify({
 		cacheVersion: CACHE_VERSION,
@@ -1317,7 +1316,7 @@ function buildResult(
 			`${imagePlaceholderCount} image placeholder(s) were not interpreted`,
 		);
 	return {
-		operation: "document_extract",
+		operation: "document_read",
 		filePath,
 		fileName: basename(filePath),
 		fileSize,
@@ -1367,7 +1366,7 @@ async function main(): Promise<void> {
 		);
 	} catch (error) {
 		console.error(
-			`document-extract: ${error instanceof Error ? error.message : String(error)}`,
+			`document-read: ${error instanceof Error ? error.message : String(error)}`,
 		);
 		process.exitCode = 1;
 	}

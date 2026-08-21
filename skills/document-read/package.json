@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "document-extract": "./scripts/document-extract.ts"
-  },
-  "scripts": {
-    "test": "bun test scripts/document-extract.test.ts"
-  }
+	"bin": {
+		"document-read": "./scripts/document-read.ts"
+	},
+	"scripts": {
+		"test": "bun test scripts/document-read.test.ts"
+	}
 }

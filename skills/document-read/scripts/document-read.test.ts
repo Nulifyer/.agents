@@ -16,12 +16,12 @@ import {
 	parseArgs,
 	parsePageRange,
 	selectConversionPlan,
-} from "./document-extract.ts";
+} from "./document-read.ts";
 
 const roots: string[] = [];
 
 function temporaryRoot(): string {
-	const root = mkdtempSync(join(tmpdir(), "document-extract-test-"));
+	const root = mkdtempSync(join(tmpdir(), "document-read-test-"));
 	roots.push(root);
 	return root;
 }
@@ -36,7 +36,7 @@ afterEach(() => {
 		rmSync(root, { recursive: true, force: true });
 });
 
-describe("document extract", () => {
+describe("document read", () => {
 	test("parses the staged agent-facing options and compatibility alias", () => {
 		expect(
 			parseArgs([

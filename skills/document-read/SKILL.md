@@ -8,7 +8,7 @@ description: Use when reading or converting a local PDF, Office document, email,
 Convert local binary documents and media through one cached interface:
 
 ```bash
-bun <skill-directory>/scripts/document-extract.ts <file> [--ocr auto|off|force] [--images auto|none|extract|describe] [--pages START-END] [--max-chars N] [--timeout-ms N] [--refresh]
+bun <skill-directory>/scripts/document-read.ts <file> [--ocr auto|off|force] [--images auto|none|extract|describe] [--pages START-END] [--max-chars N] [--timeout-ms N] [--refresh]
 ```
 
 `<skill-directory>` is this skill's directory. Keep `--engine auto` unless diagnosing an adapter. The command returns JSON with a bounded `text` preview, an `outline`, complete `markdownPath`, optional `documentJsonPath`, picture provenance, and local `imagePaths`.
@@ -32,4 +32,4 @@ Read [references/formats.md](references/formats.md) only when choosing a format-
 - Prefer `documentJsonPath` when exact page or picture provenance matters; prefer Markdown for semantic reading and search.
 - Use `--refresh` only for a stale cache or an explicit fresh-conversion request.
 
-The wrapper invokes pinned packages through `uvx`. First use of a format profile may download Python packages or model files; conversion is local after the dependencies are cached. Set `DOCUMENT_EXTRACT_UVX_PATH` when `uvx` is not on `PATH`, or `DOCUMENT_EXTRACT_CACHE_DIR` to move the conversion cache. Report relevant warnings, truncation, unexamined visuals, and artifact paths with the answer.
+The wrapper invokes pinned packages through `uvx`. First use of a format profile may download Python packages or model files; conversion is local after the dependencies are cached. Set `DOCUMENT_READ_UVX_PATH` when `uvx` is not on `PATH`, or `DOCUMENT_READ_CACHE_DIR` to move the conversion cache. Report relevant warnings, truncation, unexamined visuals, and artifact paths with the answer.
