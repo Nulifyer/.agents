@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Delivery"
+  short_description: "Stage clean commits and reviewable pull requests"
+  default_prompt: "Use $git-delivery to stage this work carefully, create clean commits, and prepare the pull request."
