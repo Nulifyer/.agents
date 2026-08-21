@@ -1,6 +1,6 @@
 ---
 name: unslop
-description: Use when natural human voice is part of a writing task, especially to remove AI-sounding prose or when explicitly invoked. Do not use for ordinary technical answers, code, or status updates.
+description: Use whenever communicating with the user or writing or revising prose that people will read, including documentation, reports, issues, commits, and messages. Do not use for code, structured data, exact quotations, machine-only text, or compressed internal agent handoffs.
 ---
 
 # Unslop
