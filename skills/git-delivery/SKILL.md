@@ -44,7 +44,7 @@ type(scope): changed behavior
 
 Use `fix`, `feat`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, or `chore` for their ordinary meanings. Choose a scope that helps someone scan history; omit it when it adds no information.
 
-Write the subject like a tiny release note. Name the observable result, not the activity performed:
+Write the subject like a tiny release note. Name the observable result, not the activity performed. Treat this first line as the commit's shorthand: `git log --oneline`, history lists, release tooling, and squash interfaces often show only the subject. It must stand alone; never rely on the body to make a vague subject meaningful.
 
 ```text
 Weak: fix(auth): update session handling
@@ -56,7 +56,7 @@ Better: perf(cache): repeated lookups reuse parsed manifests
 
 Avoid subjects such as "updates," "changes," "cleanup," "work on," or "implement feature" unless they are the precise result. A reader should understand what became different without opening the diff.
 
-Add a commit body only when the subject and diff cannot preserve an important reason, root cause, constraint, tradeoff, or migration note. Explain why the chosen behavior exists. Do not narrate the file list or duplicate a future PR body.
+For a multi-line commit message, leave one blank line after the subject. Add a body only when the subject and diff cannot preserve an important reason, root cause, rejected alternative, constraint, tradeoff, migration note, or verification detail. Use short paragraphs and explain why the chosen behavior exists. Do not narrate the file list or duplicate a future PR body.
 
 Before committing, inspect the staged diff one last time. After committing, verify the resulting commit and working-tree state. Report the commit hash and subject without implying that it was pushed.
 
