@@ -1,17 +1,21 @@
 ---
 name: skill-authoring
-description: Use when creating, revising, reviewing, porting, organizing, or validating an Agent Skill or SKILL.md.
+description: Use when creating, revising, reviewing, porting, organizing, or validating an Agent Skill or SKILL.md after the need is known. Do not mine work history; use workflow-miner.
 ---
 
 # Skill authoring
 
 A skill is a reusable instruction package loaded when its description matches the task.
 
+This skill starts from a direct user request, a clearly named recurring failure, or a candidate brief produced by `workflow-miner`. It decides how to represent the behavior and owns all resulting skill files. It does not search raw work history to discover improvement opportunities. A candidate brief supports a recommendation but does not authorize file changes; create or update files only when the user's request includes that work.
+
 If the harness provides skill-authoring guidance, use it for discovery paths, metadata, invocation controls, and validation. Keep the structure and writing style below.
 
 ## Fit
 
 Create or retain a skill when it addresses repeated work, an observed failure, or a decision the model cannot make reliably from ordinary context. Do not add a skill because a collection is popular or because its instructions sound useful in isolation.
+
+Before creating a new skill, compare the candidate with nearby skills and global or project instructions. Prefer a focused revision when an existing owner already covers the behavior. Keep separate skills only when their activation conditions or operating contracts differ in practice.
 
 When adapting another skill:
 
