@@ -5,46 +5,47 @@ description: Use when entering an unfamiliar repository or package and needing i
 
 # Repository map
 
-Build the smallest evidence-backed map needed for the task. Stop when you can name the governing instructions, package boundary, execution path, likely owners, nearby tests, and verification commands.
+Build the smallest evidence-backed map needed for the task. The goal is not to understand the whole repository. Stop when you can name the governing instructions, relevant package boundary, execution path, likely owners, nearby tests, and verification commands.
 
-## Establish the boundary
+## Start from the task
 
-1. Resolve the working directory and repository root. Check for nested repositories, submodules, and workspace manifests before assuming one root equals one package.
-2. Find `AGENTS.md` and other agent instructions by filename. Read the root instructions, then any closer file whose directory contains the target. The closest scoped instruction wins when rules conflict.
-3. If edits may follow, inspect `git status --short` before reading source so existing user changes are not mistaken for task work.
+Extract the names, behaviors, routes, commands, errors, file types, and packages mentioned by the user. These are search leads, not confirmed owners. Let the task decide how far the map needs to extend.
 
-Use `rg --files` for the initial inventory. It respects common ignore rules and is cheaper than recursive directory dumps. Search filenames for root manifests, lockfiles, build files, CI workflows, source roots, tests, migrations, generators, and deployment files. Avoid reading vendored, generated, cache, dependency, and build-output trees unless the task points there.
+If the responsible file, symbol, or package is already known, skip repository mapping and inspect that area directly.
 
-## Map in layers
+## Review in this order
 
-Read only the files that settle the next question.
+Read only enough at each stage to settle its question.
 
-1. Package and workspace manifests identify languages, package boundaries, scripts, and dependency direction.
-2. Build and CI configuration confirms the commands the repository actually runs. Do not infer test or lint commands from ecosystem defaults.
-3. Entrypoint declarations, routers, registries, dependency wiring, and startup code establish runtime flow. Directory names alone are weak evidence.
-4. Target terms lead to implementation owners and their tests. Search behavior text, config keys, routes, event names, and symbols together when the owner is unknown.
-5. Generated output should lead back to its schema, template, generator, or source file. Work on the owner unless the repository explicitly commits manual changes to generated files.
+1. **Boundary and state.** Resolve the repository root and relevant package. Check for nested repositories, submodules, and workspaces before treating the root as one package. If edits may follow, inspect the working tree before reading source so existing user changes remain distinct.
+2. **Instructions.** Find repository instruction files within the repository root. Read the root instructions, then each closer file that governs the target path. Apply the closest scoped rule when instructions conflict.
+3. **Topology.** Use manifests, lockfiles, workspace configuration, and a bounded file inventory to identify the stack, package boundaries, source roots, tests, generated areas, and build system. Use README or design-document headings for stated intent, but confirm operational claims in configuration or code.
+4. **Execution.** Start from declared entrypoints such as binaries, exports, startup files, routers, registries, handlers, or dependency wiring. Trace one concrete path toward the requested behavior. Do not read every layer or sibling implementation.
+5. **Owner and tests.** Search task terms, user-visible text, config keys, routes, event names, and symbols together. Read the strongest implementation candidate, then its callers, dependencies, and nearby tests only as needed.
+6. **Verification.** Derive build, lint, test, and generation commands from manifests and CI configuration. Do not substitute ecosystem defaults for commands the repository actually uses.
 
-For a monorepo, map the target package and only the neighboring packages it imports or exposes contracts to. Do not inventory every workspace.
+For a monorepo, map the target package and only the neighboring packages whose contracts cross the task path. Expand farther only when imports, configuration, or runtime wiring require it.
 
-## Pick the cheapest search tool
+Generated output should lead back to its schema, template, generator, or source file. Treat the owner as the edit target unless repository instructions say generated files are maintained directly.
+
+## Choose the cheapest useful tool
 
 | Question | Tool |
 |---|---|
-| Which files or manifests exist? | `rg --files` with filename globs |
-| Where does an exact string, key, route, or symbol appear? | one `rg -n` search, combining related terms with regex alternatives |
-| Which declaration owns an unfamiliar behavior? | Use the `code-shape` skill with `-m '<term1|term2>'` |
-| Where is a known declaration? | Use the `code-shape` skill with `-s <name>` |
-| What declaration contains a known line? | Use the `code-shape` skill with `-l <line>` |
-| How is a long Markdown, DOCX, or PDF organized? | `doc-shape`, then targeted reads |
-| What is the structure of an API, database, or data file? | the matching `api-shape`, `db-shape`, or `data-shape` skill |
-| Why did code change? | `git log -- <path>` or targeted `git blame`; use history only when the task asks why |
+| Repository state and root | `git status`, `git rev-parse` |
+| Files, manifests, and candidate paths | `rg --files` with narrow globs; include hidden configuration roots when relevant |
+| Exact text, keys, routes, or symbols | One `rg -n` search with related alternatives |
+| Unknown source owner | `code-shape` match mode |
+| Known declaration or containing line | `code-shape` symbol or line focus |
+| Long Markdown or design document | `doc-shape`, then exact line ranges |
+| API, database, or dataset structure | The matching shape skill |
+| Reason for an existing design or change | Targeted `git log` or `git blame` after current code is understood |
 
-Invoke `code-shape` through its own skill so its script path is portable across installations. With an unknown owner, send one match expression with alternatives. Its ranking is more useful than separate searches. Treat shapes as navigation metadata, then read the returned source range before editing or making behavioral claims.
+Use shape output as navigation metadata, then read the returned source range before editing or making behavioral claims. Prefer exact ranges over whole files. Follow references only when they can change the target path or conclusion.
 
-Prefer exact ranges over whole files. If a README or design document is long, map its headings first. Follow references only when they affect the target path.
+Batch independent read-only checks when the tool supports it. Keep each search bounded and widen it only when the current evidence leaves a specific question unanswered. Avoid recursive directory dumps, repeated one-term searches, and broad reads of vendored, dependency, cache, generated, or build-output trees.
 
-## Record evidence and unknowns
+## Keep evidence separate from inference
 
 Keep observed facts separate from inferences. A script in `package.json`, a CI command, or an entrypoint declaration is evidence. A conventional folder name is a lead.
 
