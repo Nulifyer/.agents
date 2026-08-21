@@ -11,7 +11,7 @@ import { shapeDocument } from "../../doc-shape/scripts/doc-shape.ts";
 import { shapeWeb } from "../../web-shape/scripts/web-shape.ts";
 
 const CANARY = "SHAPE_PRIVATE_CANARY_7f92";
-const options: CommonOptions = { maxOutput: 8_000, json: false, names: "show", labels: false };
+const options: CommonOptions = { maxOutput: 8_000, json: false, names: "show", source: "show", labels: false };
 let directory = "";
 
 function rendered(result: ShapeResult, overrides: Partial<CommonOptions> = {}): string {
@@ -122,6 +122,36 @@ afterAll(async () => {
 });
 
 describe("data shape adapters", () => {
+  test("refuses an unexpected access mode before reading the target", async () => {
+    const path = join(directory, "missing-protected.json");
+    await expect(shapeData(path, undefined, true, { ...options, access: "metadata" })).rejects.toThrow("requires --access observed");
+  });
+
+  test("maps dotenv keys without returning values or comments", async () => {
+    const path = join(directory, ".env.patient-api");
+    await writeFile(path, `# ${CANARY}\nexport PATIENT_API_URL=https://private.example/${CANARY}\nPATIENT_API_TOKEN="${CANARY}"\nFEATURE_ENABLED=true\nPATIENT_API_TOKEN=overridden-${CANARY}\n`);
+    const output = rendered(await shapeData(path, undefined, true, options));
+    expect(output).toContain("data dotenv access=observed");
+    expect(output).toContain("key PATIENT_API_URL string [2]");
+    expect(output).toContain("key PATIENT_API_TOKEN string {redefined} [3]");
+    expect(output).toContain("key FEATURE_ENABLED string [4]");
+    expect(output).not.toContain(CANARY);
+  });
+
+  test("maps XML elements and attributes without returning text or attribute values", async () => {
+    const path = join(directory, "patient-response.xml");
+    await writeFile(path, `<?xml version="1.0"?>\n<PatientResponse xmlns="urn:patient" requestId="${CANARY}">\n  <Patient id="${CANARY}"><Name>${CANARY}</Name><Observation code="${CANARY}">${CANARY}</Observation></Patient>\n  <Patient id="${CANARY}"><Name>${CANARY}</Name></Patient>\n</PatientResponse>\n`);
+    const output = rendered(await shapeData(path, undefined, true, options));
+    expect(output).toContain("data xml access=observed");
+    expect(output).toContain("element PatientResponse [2]");
+    expect(output).toContain("attribute requestId [2]");
+    expect(output).toContain("element Patient {repeated} [3]");
+    expect(output).not.toContain("element Name {repeated}");
+    expect(output).toContain("element Observation [3]");
+    expect(output).toContain("attribute code [3]");
+    expect(output).not.toContain(CANARY);
+  });
+
   test("maps JSONL and NDJSON records with sampling and no values", async () => {
     for (const extension of ["jsonl", "ndjson"]) {
       const path = join(directory, `events.${extension}`);
@@ -327,10 +357,39 @@ describe("database shape adapters", () => {
 });
 
 describe("CLI boundaries", () => {
+  test("does not echo protected source text in parser errors", async () => {
+    const path = join(directory, "malformed.json");
+    await writeFile(path, `{"token": ${CANARY}}`);
+    const result = await runCli(join(import.meta.dir, "../../data-shape/scripts/data-shape.ts"), [path, "--access", "observed"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Invalid JSON input");
+    expect(result.stderr).not.toContain(CANARY);
+    expect(result.stdout).toBe("");
+  });
+
+  test("can hide protected source paths and structural identifiers end to end", async () => {
+    const path = join(directory, `private-${CANARY}.json`);
+    await writeFile(path, JSON.stringify({ [`field_${CANARY}`]: CANARY }));
+    const result = await runCli(join(import.meta.dir, "../../data-shape/scripts/data-shape.ts"), [
+      path,
+      "--access",
+      "observed",
+      "--names",
+      "omit",
+      "--source",
+      "omit",
+    ]);
+    expect(result.stderr).toBe("");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("<source> data json access=observed names=omit source=omit");
+    expect(result.stdout).not.toContain(CANARY);
+  });
+
   test("accepts stdin for API, data, document, and web shapes", async () => {
     const cases = [
       ["../../api-shape/scripts/api-shape.ts", ["-", "schema.json"], JSON.stringify({ $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: { secret: { type: "string", example: CANARY } } }), "api json-schema"],
       ["../../data-shape/scripts/data-shape.ts", ["-", "events.jsonl"], `${JSON.stringify({ id: 1, secret: CANARY })}\n`, "data jsonl"],
+      ["../../data-shape/scripts/data-shape.ts", ["-", "response.xml"], `<Response token="${CANARY}"><Patient>${CANARY}</Patient></Response>`, "data xml"],
       ["../../doc-shape/scripts/doc-shape.ts", ["-", "guide.md", "--labels"], `# Guide\n\n${CANARY}\n`, "document markdown"],
       ["../../web-shape/scripts/web-shape.ts", ["-", "page.html", "--labels"], `<main><button>Continue</button><p>${CANARY}</p></main>`, "web html-static"],
     ] as const;

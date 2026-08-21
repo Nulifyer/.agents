@@ -14,7 +14,7 @@ import {
 } from "../../shape/scripts/lib/core.ts";
 
 function usage(): string {
-  return "Usage: doc-shape <markdown|docx|pdf file> [--labels] [--names show|hash|omit] [-o <chars>] [-j]\n       doc-shape - <name.md> [options]";
+  return "Usage: doc-shape <markdown|docx|pdf file> [--labels] [--access metadata|observed] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]\n       doc-shape - <name.md> [options]";
 }
 
 function markdownShape(name: string, source: string): ShapeResult {

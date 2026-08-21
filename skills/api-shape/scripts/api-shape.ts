@@ -15,7 +15,7 @@ import {
 type ObjectValue = Record<string, unknown>;
 
 function usage(): string {
-  return "Usage: api-shape <openapi|schema|graphql|proto file> [--names show|hash|omit] [-o <chars>] [-j]\n       api-shape - <name.ext> [options]";
+  return "Usage: api-shape <openapi|schema|graphql|proto file> [--access declared] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]\n       api-shape - <name.ext> [options]";
 }
 
 function object(value: unknown): ObjectValue | undefined {
@@ -207,7 +207,12 @@ export async function shapeApi(path: string, virtualName: string | undefined, op
   const extension = extname(target.name).toLowerCase();
   if ([".graphql", ".gql", ".graphqls"].includes(extension)) return graphQlShape(target.name, source);
   if (extension === ".proto") return protoShape(target.name, source);
-  const parsed: unknown = extension === ".json" ? JSON.parse(source) : Bun.YAML.parse(source);
+  let parsed: unknown;
+  try {
+    parsed = extension === ".json" ? JSON.parse(source) : Bun.YAML.parse(source);
+  } catch {
+    throw new Error("Invalid API contract syntax; source text was not included");
+  }
   const root = object(parsed);
   if (!root) throw new Error("API description must be an object");
   if (root["openapi"] || root["swagger"] || root["paths"]) return openApiShape(target.name, root);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { extname, resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 
 type Domain = "api" | "code" | "data" | "db" | "doc" | "web";
 
@@ -11,7 +11,8 @@ function usage(): string {
 export function routeByQuestion(question: string): Domain | undefined {
   const value = question.toLowerCase();
   if (/\b(endpoints?|operations?|openapi|swagger|graphql|protobuf|grpc|request schemas?|response schemas?|api contracts?)\b/.test(value)) return "api";
-  if (/\b(datasets?|records?|spreadsheets?|workbooks?|sheets?|csv|parquet|arrays?)\b/.test(value)) return "data";
+  if (/\b(datasets?|records?|spreadsheets?|workbooks?|sheets?|csv|parquet|arrays?|payloads?|response bod(?:y|ies)|request bod(?:y|ies)|dotenv|env files?|environment variable names?)\b/.test(value)) return "data";
+  if (/\b(?:json|xml)\s+(?:shape|structure)\b/.test(value)) return "data";
   if (/\b(tables?|foreign keys?|indexes|database|catalog|relations?|schema migrations?)\b/.test(value)) return "db";
   if (/\b(buttons?|links?|forms?|click|accessible|landmarks?|page controls?|navigation)\b/.test(value)) return "web";
   if (/\b(documents?|outlines?|headings?|sections?|pages?|footnotes?|figures?|paragraphs?)\b/.test(value)) return "doc";
@@ -22,12 +23,14 @@ export function routeByQuestion(question: string): Domain | undefined {
 
 export function routeByTarget(target: string): Domain | undefined {
   if (/^https?:\/\//i.test(target)) return "web";
+  const fileName = basename(target).toLowerCase();
+  if (fileName === ".env" || fileName.startsWith(".env.")) return "data";
   const extension = extname(target).toLowerCase();
   if ([".graphql", ".gql", ".graphqls", ".proto"].includes(extension)) return "api";
   if ([".csv", ".tsv", ".jsonl", ".ndjson", ".xlsx"].includes(extension)) return "data";
   if ([".sqlite", ".sqlite3", ".db"].includes(extension) || /^postgres(?:ql)?:\/\//i.test(target)) return "db";
   if ([".md", ".mdx", ".markdown", ".docx", ".pdf"].includes(extension)) return "doc";
-  if ([".html", ".htm", ".xhtml", ".json", ".yaml", ".yml", ".sql"].includes(extension)) return undefined;
+  if ([".html", ".htm", ".xhtml", ".json", ".xml", ".yaml", ".yml", ".sql"].includes(extension)) return undefined;
   return "code";
 }
 
@@ -62,8 +65,8 @@ async function main(): Promise<void> {
   if (!target) throw new Error("A target is required");
   const domain = explicit ?? routeByQuestion(question) ?? routeByTarget(target);
   if (!domain) throw new Error("Ambiguous target. Add --as or a more specific --question; HTML, JSON, YAML, and SQL can have several shapes");
-  if (domain === "code" && forwarded.some((argument) => ["--names", "--labels", "--access"].includes(argument))) {
-    throw new Error("code-shape does not yet support --names, --labels, or --access");
+  if (domain === "code" && forwarded.some((argument) => ["--names", "--source", "--labels", "--access"].includes(argument))) {
+    throw new Error("code-shape does not yet support --names, --source, --labels, or --access");
   }
   const child = Bun.spawn([process.execPath, domainScript(domain), ...forwarded], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([

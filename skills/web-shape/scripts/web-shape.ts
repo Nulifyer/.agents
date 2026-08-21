@@ -43,7 +43,7 @@ const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "i
 type Frame = { tag: string; node?: ShapeNode; text: string[]; hidden: boolean };
 
 function usage(): string {
-  return "Usage: web-shape <html-file|url> [--labels] [--names show|hash|omit] [-o <chars>] [-j]\n       web-shape - <name.html> [options]";
+  return "Usage: web-shape <html-file|url> [--labels] [--access observed] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]\n       web-shape - <name.html> [options]";
 }
 
 function attributes(tag: string): Map<string, string> {

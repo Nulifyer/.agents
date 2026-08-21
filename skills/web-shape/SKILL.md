@@ -1,6 +1,6 @@
 ---
 name: web-shape
-description: Use when mapping the user-facing semantic structure of an HTML file or page, including landmarks, headings, forms, controls, and links. Do not use for source implementation ownership.
+description: Use when mapping semantic landmarks and controls in static HTML or a fetched page. Do not use for implementation ownership, rendered application state, or page prose.
 ---
 
 # Web shape
@@ -8,7 +8,7 @@ description: Use when mapping the user-facing semantic structure of an HTML file
 Map page semantics without returning body prose or input values.
 
 ```bash
-bun <skill-directory>/scripts/web-shape.ts <html-file|url> [--labels] [--names show|hash|omit] [-o <chars>] [-j]
+bun <skill-directory>/scripts/web-shape.ts <html-file|url> [--labels] [--access observed] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]
 ```
 
 Static HTML reports `access=observed`. `--labels` adds accessible labels and short control text. Link destinations omit queries and fragments. `[incomplete]` on scripted HTML means the static structure may differ from the rendered page.

@@ -16,7 +16,7 @@ type SqliteForeignKey = { from: string; table: string; to: string };
 type SqliteIndex = { name: string; unique: number; origin: string };
 
 function usage(): string {
-  return "Usage: db-shape <database.sqlite|postgres-uri> [--table <name>] [--names show|hash|omit] [-o <chars>] [-j]";
+  return "Usage: db-shape <database.sqlite|postgres-uri> [--table <name>] [--access metadata] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]";
 }
 
 function literal(value: string): string {

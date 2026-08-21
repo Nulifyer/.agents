@@ -12,7 +12,7 @@ import { shapeWeb } from "../../web-shape/scripts/web-shape.ts";
 import { routeByQuestion, routeByTarget } from "./shape.ts";
 
 const CANARY = "SHAPE_PRIVATE_CANARY_7f92";
-const options: CommonOptions = { maxOutput: 4_000, json: false, names: "show", labels: false };
+const options: CommonOptions = { maxOutput: 4_000, json: false, names: "show", source: "show", labels: false };
 let directory = "";
 
 function rendered(result: ShapeResult, overrides: Partial<CommonOptions> = {}): string {
@@ -34,11 +34,15 @@ describe("shape family", () => {
     expect(routeByQuestion("Which controls can a user click?")).toBe("web");
     expect(routeByQuestion("Show the workbook sheets and columns")).toBe("data");
     expect(routeByQuestion("What tables have foreign keys?")).toBe("db");
+    expect(routeByQuestion("Show the XML payload structure without its values")).toBe("data");
+    expect(routeByQuestion("Which environment variable names are declared?")).toBe("data");
     expect(routeByTarget("guide.md")).toBe("doc");
     expect(routeByTarget("records.csv")).toBe("data");
+    expect(routeByTarget("service/.env.production")).toBe("data");
     expect(routeByTarget("contract.proto")).toBe("api");
     expect(routeByTarget("page.html")).toBeUndefined();
     expect(routeByTarget("payload.json")).toBeUndefined();
+    expect(routeByTarget("payload.xml")).toBeUndefined();
     expect(routeByTarget("query.sql")).toBeUndefined();
   });
 
@@ -135,16 +139,27 @@ components:
 
   test("supports anonymous, hashed, bounded, and JSON output", async () => {
     const result: ShapeResult = {
-      source: "fixture",
+      source: `private-${CANARY}.json`,
       domain: "data",
       format: "json",
       access: "observed",
-      nodes: [{ kind: "object", children: Array.from({ length: 30 }, (_, index) => ({ kind: "field", name: `private_${index}`, dataType: "string" })) }],
+      nodes: [{ kind: "object", children: Array.from({ length: 30 }, (_, index) => ({
+        kind: "field",
+        name: `private_${index}`,
+        dataType: index === 0 ? `Patient_${CANARY}` : "string",
+        traits: index === 0 ? [`fk=patient_${CANARY}.id`, `to=/patient/${CANARY}`] : undefined,
+        locator: { type: "pointer", value: `/private_${index}/${CANARY}` },
+      })) }],
     };
-    expect(rendered(result, { names: "omit" })).not.toContain("private_");
-    const hashed = rendered(result, { names: "hash" });
+    const anonymous = rendered(result, { names: "omit", source: "omit" });
+    expect(anonymous).not.toContain("private_");
+    expect(anonymous).not.toContain(CANARY);
+    expect(anonymous).toContain("[pointer]");
+    const hashed = rendered(result, { names: "hash", source: "hash" });
     expect(hashed).toContain("field #");
+    expect(hashed).toContain("[pointer #");
     expect(hashed).not.toContain("private_");
+    expect(hashed).not.toContain(CANARY);
     const small = rendered(result, { maxOutput: 180 });
     const large = rendered(result, { maxOutput: 500 });
     const smallBranches = small.split("\n").filter((line) => !line.startsWith("[") && line !== small.split("\n")[0]);

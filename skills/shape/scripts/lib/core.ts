@@ -38,6 +38,7 @@ export type CommonOptions = {
   maxOutput: number;
   json: boolean;
   names: NameDisclosure;
+  source: NameDisclosure;
   labels: boolean;
   access?: ShapeAccess;
 };
@@ -64,6 +65,7 @@ export function parseCommonArgs(args: string[]): ParsedCommonArgs {
   let maxOutput = DEFAULT_OUTPUT_CHARS;
   let json = false;
   let names: NameDisclosure = "show";
+  let source: NameDisclosure = "show";
   let labels = false;
   let access: ShapeAccess | undefined;
   for (let index = 0; index < args.length; index++) {
@@ -78,6 +80,12 @@ export function parseCommonArgs(args: string[]): ParsedCommonArgs {
         throw new Error("--names must be show, hash, or omit");
       }
       names = value;
+    } else if (argument === "--source") {
+      const value = args[++index];
+      if (value !== "show" && value !== "hash" && value !== "omit") {
+        throw new Error("--source must be show, hash, or omit");
+      }
+      source = value;
     } else if (argument === "--labels") {
       labels = true;
     } else if (argument === "--access") {
@@ -90,7 +98,7 @@ export function parseCommonArgs(args: string[]): ParsedCommonArgs {
       rest.push(argument as string);
     }
   }
-  return { options: { maxOutput, json, names, labels, access }, rest };
+  return { options: { maxOutput, json, names, source, labels, access }, rest };
 }
 
 export function safeText(value: string, maximum = 100): string {
@@ -108,24 +116,64 @@ export function disclosedName(value: string | undefined, mode: NameDisclosure): 
   return `#${createHash("sha256").update(value).digest("hex").slice(0, 10)}`;
 }
 
-function locatorText(locator: ShapeLocator | undefined): string {
+const PUBLIC_TYPE_WORDS = new Set([
+  "array", "bigint", "bigserial", "bit", "blob", "bool", "boolean", "byte", "bytes", "char", "character",
+  "date", "decimal", "double", "enum", "float", "int", "integer", "interval", "json", "jsonb", "long", "map",
+  "null", "number", "numeric", "object", "precision", "real", "record", "ref", "serial", "short", "smallint",
+  "smallserial", "string", "text", "time", "timestamp", "tinyint", "unknown", "untyped", "uuid", "varchar",
+  "varying", "void", "without", "with", "zone",
+]);
+
+function dataTypeText(value: string | undefined, mode: NameDisclosure): string {
+  if (!value) return "";
+  if (mode === "show") return safeText(value, 80);
+  return safeText(value, 80).replace(/[A-Za-z_][A-Za-z0-9_]*/g, (word) => {
+    if (PUBLIC_TYPE_WORDS.has(word.toLowerCase())) return word;
+    return disclosedName(word, mode) ?? "type";
+  });
+}
+
+function traitText(value: string, mode: NameDisclosure): string {
+  const trait = safeText(value, 60);
+  if (mode === "show" || !trait.includes("=")) return trait;
+  if (/^(?:hidden|level|members|pages|pk|sampled)=\d+$/.test(trait)) return trait;
+  if (/^range=[A-Z]+\d+(?::[A-Z]+\d+)?$/i.test(trait)) return trait;
+  if (/^origin=[cup]$/.test(trait)) return trait;
+  const separator = trait.indexOf("=");
+  const key = trait.slice(0, separator);
+  const raw = trait.slice(separator + 1);
+  if (key === "fk") {
+    const disclosed = raw.split(".").map((part) => disclosedName(part, mode)).filter(Boolean);
+    return disclosed.length ? `${key}=${disclosed.join(".")}` : key;
+  }
+  const disclosed = disclosedName(raw, mode);
+  return disclosed ? `${key}=${disclosed}` : key;
+}
+
+function locatorText(locator: ShapeLocator | undefined, mode: NameDisclosure): string {
   if (!locator) return "";
   if (locator.type === "line") {
     return ` [${locator.start}${locator.end && locator.end !== locator.start ? `-${locator.end}` : ""}]`;
   }
   if (locator.type === "byte") return ` [b${locator.start}${locator.end !== undefined ? `-${locator.end}` : ""}]`;
   if (locator.type === "page") return ` [page ${locator.page}]`;
-  if (locator.type === "cell") return ` [${locator.sheet}${locator.range ? `!${locator.range}` : ""}]`;
-  return ` [${safeText(locator.value, 140)}]`;
+  if (locator.type === "cell") {
+    const sheet = disclosedName(locator.sheet, mode);
+    if (!sheet) return locator.range ? ` [cells ${safeText(locator.range, 40)}]` : " [cells]";
+    return ` [${sheet}${locator.range ? `!${safeText(locator.range, 40)}` : ""}]`;
+  }
+  if (mode === "show") return ` [${safeText(locator.value, 140)}]`;
+  const value = disclosedName(locator.value, mode);
+  return value ? ` [${locator.type} ${safeText(value, 140)}]` : ` [${locator.type}]`;
 }
 
 function nodeLine(node: ShapeNode, level: number, options: CommonOptions): string {
   const name = disclosedName(node.name, options.names);
   const label = options.labels ? safeText(node.label ?? "") : "";
   const identity = [name, label && label !== name ? JSON.stringify(label) : ""].filter(Boolean).join(" ");
-  const dataType = node.dataType ? ` ${safeText(node.dataType, 80)}` : "";
-  const traits = node.traits?.length ? ` {${node.traits.map((trait) => safeText(trait, 60)).join(",")}}` : "";
-  return `${"  ".repeat(level)}${safeText(node.kind, 30)}${identity ? ` ${identity}` : ""}${dataType}${traits}${locatorText(node.locator)}`;
+  const dataType = node.dataType ? ` ${dataTypeText(node.dataType, options.names)}` : "";
+  const traits = node.traits?.length ? ` {${node.traits.map((trait) => traitText(trait, options.names)).join(",")}}` : "";
+  return `${"  ".repeat(level)}${safeText(node.kind, 30)}${identity ? ` ${identity}` : ""}${dataType}${traits}${locatorText(node.locator, options.names)}`;
 }
 
 function allLines(nodes: ShapeNode[], options: CommonOptions, level = 0): string[] {
@@ -138,7 +186,8 @@ function allLines(nodes: ShapeNode[], options: CommonOptions, level = 0): string
 }
 
 export function renderShape(result: ShapeResult, options: CommonOptions): string {
-  const header = `${safeText(result.source, 160)} ${result.domain} ${result.format} access=${result.access} names=${options.names}${options.labels ? " labels=show" : ""}`;
+  const source = disclosedName(result.source, options.source) ?? "<source>";
+  const header = `${safeText(source, 160)} ${result.domain} ${result.format} access=${result.access} names=${options.names} source=${options.source}${options.labels ? " labels=show" : ""}`;
   const body = allLines(result.nodes, options);
   const fixedNotes = [
     ...(result.notes ?? []).map((note) => `[${safeText(note, 120)}]`),
