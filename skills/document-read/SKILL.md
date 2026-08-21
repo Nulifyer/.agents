@@ -1,21 +1,24 @@
 ---
 name: document-read
 description: Use when extracting bounded text and artifacts from a local PDF, Office document, email, scan, audio, or video. Do not use for ordinary text, code, structured data files, HTML, or a standalone image.
+compatibility: Requires Bun and uvx. First use may require network access to download pinned Python packages or model files; some format profiles have additional platform requirements.
 ---
 
 # Document read
 
 Convert local binary documents and media through one cached interface:
 
+Resolve local input paths from the caller's working directory, then run from this skill's directory:
+
 ```bash
-bun <skill-directory>/scripts/document-read.ts <file> [--ocr auto|off|force] [--images auto|none|extract|describe] [--pages START-END] [--max-chars N] [--timeout-ms N] [--refresh]
+bun scripts/document-read.ts <file> [--ocr auto|off|force] [--images auto|none|extract|describe] [--pages START-END] [--max-chars N] [--timeout-ms N] [--refresh]
 ```
 
-`<skill-directory>` is this skill's directory. Keep `--engine auto` unless diagnosing an adapter. The command returns JSON with a bounded `text` preview, an `outline`, complete `markdownPath`, optional `documentJsonPath`, picture provenance, and local `imagePaths`.
+Keep `--engine auto` unless diagnosing an adapter. The command returns JSON with a bounded `text` preview, an `outline`, complete `markdownPath`, optional `documentJsonPath`, picture provenance, and local `imagePaths`.
 
 ## Use the cheapest sufficient stage
 
-1. Route native formats first. Read text and Markdown normally, use `data-shape` for workbook structure, `doc-shape` for a document outline, and the image reader for an ordinary standalone image.
+1. Route native formats first. Read text and Markdown normally. Use `data-shape` for workbook structure and `doc-shape` for a document outline when those sibling skills are available. Use the host's image-inspection capability for an ordinary standalone image.
 2. Run the extractor once with defaults. Auto routing uses a small MarkItDown path for ordinary modern Office/email/EPUB, Docling for PDFs and layout-sensitive formats, and isolated ASR profiles for media.
 3. Work from the bounded preview and outline. If `textTruncated` is true, search or read narrow ranges from `markdownPath`; do not print the whole conversion into context.
 4. For PDFs with mixed text and figures, use `pictures` to connect captions and page/bounding-box provenance to `imagePaths`. Inspect only images relevant to the question.

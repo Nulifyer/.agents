@@ -35,10 +35,10 @@ Generated output should lead back to its schema, template, generator, or source 
 | Repository state and root | `git status`, `git rev-parse` |
 | Files, manifests, and candidate paths | `rg --files` with narrow globs; include hidden configuration roots when relevant |
 | Exact text, keys, routes, or symbols | One `rg -n` search with related alternatives |
-| Unknown source owner | `code-shape` match mode |
-| Known declaration or containing line | `code-shape` symbol or line focus |
-| Long Markdown or design document | `doc-shape`, then exact line ranges |
-| API, database, or dataset structure | The matching shape skill |
+| Unknown source owner | `code-shape` match mode when available; otherwise targeted source search |
+| Known declaration or containing line | `code-shape` symbol or line focus when available; otherwise a narrow source read |
+| Long Markdown or design document | `doc-shape` when available, then exact line ranges; otherwise heading search |
+| API, database, or dataset structure | The matching shape skill when available; otherwise declared metadata or bounded local inspection |
 | Reason for an existing design or change | Targeted `git log` or `git blame` after current code is understood |
 
 Use shape output as navigation metadata, then read the returned source range before editing or making behavioral claims. Prefer exact ranges over whole files. Follow references only when they can change the target path or conclusion.

@@ -1,14 +1,17 @@
 ---
 name: api-shape
 description: Use when mapping declared OpenAPI, JSON Schema, GraphQL SDL, or Protobuf contracts without calling live operations. Use data-shape for observed payload files and code-shape for implementation ownership.
+compatibility: Requires Bun and the complete shape skill family installed as sibling skill directories.
 ---
 
 # API shape
 
 Map API contracts without calling business operations or fetching payloads.
 
+Resolve local input paths from the caller's working directory, then run from this skill's directory:
+
 ```bash
-bun <skill-directory>/scripts/api-shape.ts <contract-file> [--access declared] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]
+bun scripts/api-shape.ts <contract-file> [--access declared] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]
 ```
 
 Results report `access=declared`. Descriptions, examples, defaults, enum literals, and server credentials are excluded. OpenAPI output includes endpoints, operations, parameters, request bodies, responses, and component schemas. GraphQL and Protocol Buffer output includes type and operation declarations.

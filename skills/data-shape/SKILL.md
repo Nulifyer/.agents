@@ -1,14 +1,17 @@
 ---
 name: data-shape
 description: Use when mapping value-free structure from JSON, JSONL, XML payloads, dotenv, CSV, TSV, or XLSX and local inspection is allowed. Do not use for API contracts, live databases, document outlines, or source ownership.
+compatibility: Requires Bun and the complete shape skill family installed as sibling skill directories. XLSX inspection also requires unzip.
 ---
 
 # Data shape
 
 Map JSON, JSONL, XML instance payloads, dotenv files, CSV, TSV, and XLSX structure.
 
+Resolve local input paths from the caller's working directory, then run from this skill's directory:
+
 ```bash
-bun <skill-directory>/scripts/data-shape.ts <file> [--no-header] [--access observed|metadata] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]
+bun scripts/data-shape.ts <file> [--no-header] [--access observed|metadata] [--names show|hash|omit] [--source show|hash|omit] [-o <chars>] [-j]
 ```
 
 Raw JSON, XML, dotenv, and delimited files report `access=observed` because their structure is stored in content. XML returns element and attribute names but not text or attribute values. Dotenv returns keys but not assignments or comments. XLSX reports `access=metadata` and reads workbook and table-definition parts without opening worksheets or reading cell values. Sampling affects inference only; values never appear in output.

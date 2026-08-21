@@ -1,17 +1,20 @@
 ---
 name: youtube-transcript
 description: Use when retrieving, searching, summarizing, or citing public YouTube captions. Do not use for media download, captionless transcription, or private videos.
+compatibility: Requires Bun, dependencies installed from this skill's package.json, and network access to YouTube.
 ---
 
 # YouTube transcript
 
 Fetch a public caption track into cached Markdown and timed JSON:
 
+Run from this skill's directory:
+
 ```bash
-bun <skill-directory>/scripts/youtube-transcript.ts <youtube-url-or-id> [--languages en de] [--kind any|manual|generated] [--translate CODE] [--max-chars N] [--refresh]
+bun scripts/youtube-transcript.ts <youtube-url-or-id> [--languages en de] [--kind any|manual|generated] [--translate CODE] [--max-chars N] [--refresh]
 ```
 
-`<skill-directory>` is this skill's directory. The command returns JSON with a bounded `text` preview plus complete `markdownPath` and `segmentsPath` artifacts. It accepts watch, short, live, embed, and `youtu.be` URLs. Use `--pretty` only for human inspection.
+The command returns JSON with a bounded `text` preview plus complete `markdownPath` and `segmentsPath` artifacts. It accepts watch, short, live, embed, and `youtu.be` URLs. Use `--pretty` only for human inspection.
 
 ## Choose and read the track
 

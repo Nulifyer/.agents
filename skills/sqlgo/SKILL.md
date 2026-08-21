@@ -1,6 +1,7 @@
 ---
 name: sqlgo
 description: Use when running or exporting SQL through sqlgo, querying its supported local files, or managing sqlgo connections, history, or SSH settings. Use shape skills when only value-free structure is needed.
+compatibility: Requires the sqlgo CLI. Database connections may also require network access, credentials, SSH configuration, or local drivers supported by sqlgo.
 ---
 
 # sqlgo

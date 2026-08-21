@@ -1,6 +1,7 @@
 ---
 name: subagent-handoff
 description: Use when delegation is requested or concrete bounded workstreams make subagents realistic, including handoff and result integration. Do not use for ordinary local work or direct user responses.
+compatibility: Delegation depends on the host's subagent support. Human-facing deliverables require the unslop skill from this suite.
 ---
 
 # Subagent handoff
@@ -49,36 +50,20 @@ When a `work-ledger` exists, pass its path and name the sections the worker must
 
 ## Keep internal handoffs dense
 
-Every subagent must load both skills:
-
-1. `$unslop`: remove vague, generic, repetitive, unsupported content. Keep specific evidence and useful conclusions.
-2. `$caveman` in `full` mode: compress improved content without losing substance.
-
-Order matters. `$unslop` improves signal. `$caveman full` reduces tokens.
-
-Priority when rules conflict:
-
-1. Correctness and safety.
-2. Exact evidence and uncertainty.
-3. `$unslop` clarity.
-4. `$caveman full` brevity.
-
-Include this in every delegation:
+Internal handoffs are machine-to-machine. Do not load writing-style skills merely to format them. Include this compact contract in every delegation:
 
 ```text
-Load and apply the `$unslop` skill. Then load and apply the `$caveman`
-skill in full mode.
+Keep updates and the final handoff direct and compact. Remove greetings,
+repetition, vague summaries, and unsupported commentary. Preserve exact
+identifiers, paths, commands, errors, numbers, evidence, uncertainty,
+warnings, changes, verification, blockers, and the words not, never, no,
+only, and except. Separate observed facts from inference when it matters.
 
-Use both for updates and final handoff. Preserve exact identifiers, paths,
-commands, errors, numbers, evidence, uncertainty, warnings, changes,
-verification, and blockers. Never drop not, never, no, only, or except.
-
-Apply `$unslop` but not `$caveman` to persisted artifacts: code comments,
-documentation, commits, issues, reports, prompts, policies, and user-facing
-text. Compress internal communication only.
+If the deliverable includes text people will read, apply the unslop skill to
+that text. Do not apply compressed internal style to human-facing artifacts.
 ```
 
-Subagents must pass same instruction to nested subagents.
+Workers must pass the same contract to nested workers. A worker drafting documentation, reports, issues, commits, messages, or other human-readable prose must apply `unslop` to that deliverable before returning it.
 
 ## Combine results
 
@@ -88,4 +73,4 @@ The parent must:
 2. Resolve conflicts against source artifacts or fresh verification, not by majority vote.
 3. Review overlapping changes before integration and run the relevant combined checks.
 4. Update the `work-ledger`, when present, with durable findings, decisions, changes, and remaining unknowns.
-5. Apply `$unslop` to the user-facing response. Never forward compressed handoffs unchanged.
+5. Apply `unslop` to the user-facing response and human-readable artifacts. Never forward compressed handoffs unchanged.
