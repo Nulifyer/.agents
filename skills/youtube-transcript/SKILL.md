@@ -1,6 +1,6 @@
 ---
 name: youtube-transcript
-description: Use when retrieving, searching, summarizing, or citing an available public YouTube caption transcript from a video URL or ID. Do not use for downloading video or audio, transcribing media that has no caption track, or accessing private videos.
+description: Use when retrieving, searching, summarizing, or citing public YouTube captions. Do not use for media download, captionless transcription, or private videos.
 ---
 
 # YouTube transcript

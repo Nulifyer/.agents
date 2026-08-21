@@ -1,6 +1,6 @@
 ---
 name: code-shape
-description: Use first for repository source discovery when locating the implementation or owner of a symbol, UI control, behavior, callback, route, or config key. Do not use for page semantics, document outlines, datasets, live databases, or API contracts.
+description: Use first when locating implementation ownership for source behavior, symbols, UI controls, routes, SQL statements, or config keys. Use repo-map for broad repository orientation and other shape skills for non-source structure.
 ---
 
 # Code shape

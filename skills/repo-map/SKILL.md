@@ -1,6 +1,6 @@
 ---
 name: repo-map
-description: Use when entering an unfamiliar repository or package and needing its boundaries, instructions, stack, entrypoints, execution flow, test commands, generated areas, or likely files for a task. Do not use when the responsible file or symbol is already known.
+description: Use when starting in an unfamiliar repository and needing boundaries, instructions, stack, entrypoints, execution paths, tests, or likely owners. Do not use when the target package, file, or symbol is already known.
 ---
 
 # Repository map

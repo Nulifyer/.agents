@@ -1,11 +1,13 @@
 ---
 name: sqlgo
-description: Use when querying a supported database or local SQLite, CSV, TSV, or JSONL file with the sqlgo CLI, exporting query results, or managing sqlgo connections, history, and SSH tunnel settings.
+description: Use when running or exporting SQL through sqlgo, querying its supported local files, or managing sqlgo connections, history, or SSH settings. Use shape skills when only value-free structure is needed.
 ---
 
 # sqlgo
 
 Use sqlgo's non-interactive verbs for agent work. A bare `sqlgo` starts the TUI.
+
+Use `db-shape` or `data-shape` instead when structure alone answers the task or protected values must stay out of model context.
 
 Check the installed command before relying on remembered flags:
 

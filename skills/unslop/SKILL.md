@@ -1,11 +1,11 @@
 ---
 name: unslop
-description: Cut AI tells from any writing. Must always apply.
+description: Use when natural human voice is part of a writing task, especially to remove AI-sounding prose or when explicitly invoked. Do not use for ordinary technical answers, code, or status updates.
 ---
 
 # Unslop
 
-Edit text to remove AI patterns and add human voice.
+Edit user-facing prose to remove AI patterns and add human voice. Apply it only to writing where tone is part of the requested outcome, or when another active skill explicitly requires it.
 
 ## Process
 

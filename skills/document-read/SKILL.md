@@ -1,6 +1,6 @@
 ---
 name: document-read
-description: Use when reading or converting a local PDF, Office document, email, scanned document, audio, or video file into bounded text plus reusable artifacts. Do not use for source code, ordinary text, Markdown, JSON, CSV/TSV, HTML, or a standalone image that the available readers can inspect directly.
+description: Use when extracting bounded text and artifacts from a local PDF, Office document, email, scan, audio, or video. Do not use for ordinary text, code, structured data files, HTML, or a standalone image.
 ---
 
 # Document read
