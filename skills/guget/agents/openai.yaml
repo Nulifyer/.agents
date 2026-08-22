@@ -1,0 +1,4 @@
+interface:
+  display_name: "Guget"
+  short_description: "Manage NuGet packages safely with guget"
+  default_prompt: "Use $guget to inspect this .NET workspace and plan safe NuGet package changes."
