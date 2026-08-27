@@ -4,6 +4,30 @@ Use this reference when a skill targets more than one agent harness, is distribu
 
 Treat the harness as separate from the model provider. Claude, OpenAI, Gemini, or another model running inside a harness receives the skills, tools, paths, and policies that the harness exposes.
 
+## Primary compatibility profile
+
+The default compatibility target for this collection is:
+
+- OpenAI Codex;
+- GitHub Copilot CLI and supported Copilot agent surfaces;
+- OpenCode.
+
+All three discover personal skills from `~/.agents/skills/<name>/SKILL.md` and repository skills from `.agents/skills/<name>/SKILL.md`. Use that shared location as the source of truth. A remote Copilot cloud job does not receive a workstation home directory; put required remote skills in the repository or an organization-supported source.
+
+The portable frontmatter intersection is `name`, `description`, `license`, `compatibility`, and string-valued `metadata`. `name` and `description` are required. Omit `allowed-tools` in the default profile: the Agent Skills specification marks it experimental, Copilot assigns host-specific semantics, and OpenCode does not list it among recognized fields.
+
+Use the smallest representation that owns the behavior:
+
+| Need | Representation |
+| --- | --- |
+| Reusable instructions, scripts, references, or assets loaded on demand | Portable skill |
+| Stable repository rules that apply to every task | Repository instruction file, normally `AGENTS.md` |
+| Deterministic lifecycle behavior such as pre-compaction or stop handling | Host hook or adapter |
+| A new external operation or service | Host tool, MCP server, or plugin |
+| Session creation, permission policy, or host UI metadata | Host adapter or sidecar, never portable prose alone |
+
+Do not create parallel copies of a skill for the three primary harnesses. Add a host layer only for behavior outside the shared specification.
+
 ## Portable metadata
 
 Start with the [Agent Skills specification](https://agentskills.io/specification). Keep the shared `SKILL.md` on its common contract:
@@ -32,21 +56,19 @@ Before claiming a skill is portable:
 7. Avoid host tool names when describing common operations. State the capability and required outcome, then add a host-specific instruction only when the operation cannot otherwise be selected reliably.
 8. Preserve progressive disclosure. Shared descriptions must stay short because every host advertises them differently and may limit or shorten the available-skill catalog.
 
-## Harness matrix
+## Primary harness layers
 
-Verify current primary documentation before relying on host-specific behavior. This matrix was reviewed 2026-08-21.
+Verify current primary documentation before relying on host-specific behavior. This profile was reviewed 2026-08-27.
 
-| Harness | Shared `.agents/skills` discovery | Host-specific behavior to use only when needed |
+| Harness | Shared discovery | Host layer to use only when required |
 | --- | --- | --- |
-| [OpenAI Codex](https://developers.openai.com/codex/skills) | Project and `~/.agents/skills` | `agents/openai.yaml` provides UI metadata, dependency declarations, and `policy.allow_implicit_invocation`. Keep it a sidecar so other hosts can ignore it. |
-| [GitHub Copilot](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#skills-reference) | Project and `~/.agents/skills` in supported local surfaces | Supports `argument-hint`, `user-invocable`, `disable-model-invocation`, and host-specific `allowed-tools`. Do not expect a remote cloud agent to read a workstation home directory; distribute remote skills through a repository or organization-supported mechanism. |
-| [Gemini CLI](https://geminicli.com/docs/cli/using-agent-skills/) | Workspace and `~/.agents/skills` aliases | Activates skills with user consent. Prefer the core fields unless current Gemini documentation defines an extension that the skill needs. |
-| [Cursor](https://cursor.com/docs/skills) | Project and `~/.agents/skills` | Supports `paths`, `disable-model-invocation`, and UI fields such as `icon` and `color`. Keep file scoping and UI decoration out of the portable core unless Cursor is an explicit target requirement. |
-| [OpenCode](https://opencode.ai/docs/skills) | Project and `~/.agents/skills` | Recognizes the core fields and ignores unknown frontmatter. Configure skill permissions in OpenCode configuration rather than assuming another host's permission metadata applies. |
-| [Pi](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/skills.md) | Project and `~/.agents/skills` | Follows the standard but is lenient and also recognizes `disable-model-invocation` and experimental `allowed-tools`. Strictly follow the standard even when Pi accepts a mismatch. |
-| [Claude Code](https://code.claude.com/docs/en/slash-commands) | No direct `.agents/skills` discovery documented | Install or symlink the same skill into `.claude/skills` or `~/.claude/skills`. Claude-specific fields include `disable-model-invocation`, `user-invocable`, `context`, `agent`, `argument-hint`, and tool permissions. |
+| [OpenAI Codex skills](https://developers.openai.com/codex/skills), [plugins](https://developers.openai.com/codex/plugins), and [hooks](https://developers.openai.com/codex/hooks) | Repository ancestors and `~/.agents/skills` | `agents/openai.yaml` owns presentation, tool dependencies, and `policy.allow_implicit_invocation`. Codex plugins own bundled hooks and other installable components. Changed hooks require trust review. |
+| [GitHub Copilot skills](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills), [CLI plugins](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference), and [hooks](https://docs.github.com/en/copilot/reference/hooks-reference) | Repository and `~/.agents/skills` on documented local surfaces | Copilot-only skills may use `argument-hint`, `user-invocable`, `disable-model-invocation`, and Copilot `allowed-tools`. Plugins use a root `plugin.json`; hooks use `hooks.json` or `hooks/hooks.json`. Keep these extensions out of a portable skill. |
+| [OpenCode skills](https://opencode.ai/docs/skills) and [plugins](https://opencode.ai/docs/plugins) | Repository ancestors and `~/.agents/skills` | Configure skill allow, ask, or deny policy in `opencode.json`. Use a TypeScript or JavaScript OpenCode plugin only when lifecycle or host APIs are truly required; plugin APIs are a separate compatibility surface from Agent Skills. |
 
-`disable-model-invocation: true` is understood by several hosts, but it is not a universal Agent Skills field. For an explicit-only shared skill, also state the boundary in its description and configure each target host's supported invocation policy. Do not claim strict explicit-only enforcement on a host that merely ignores the field.
+`disable-model-invocation: true` is not portable. For an explicit-only shared skill, state the boundary in the description and configure each host's supported policy. Do not claim enforcement when a host merely ignores an unknown field.
+
+Other harnesses may also discover `.agents/skills`, but they are outside this collection's default compatibility claim. When one becomes an explicit target, verify its current primary documentation and add only the necessary host layer; do not introduce a second portable layout.
 
 ## Validation
 
@@ -58,3 +80,9 @@ Use the cheapest checks that support the compatibility claim:
 3. In each claimed harness, confirm discovery, one intended activation, one nearby non-activation, explicit invocation when relevant, and the intended permission behavior.
 4. Exercise important scripts with their declared runtime and missing-dependency path. Confirm model-visible output excludes secrets or protected values when that is part of the contract.
 5. Record what was actually tested. Passing in one harness or with one underlying model does not establish support in another.
+
+For the primary profile:
+
+- Codex: inspect `/skills` or the App Server skill list; verify `agents/openai.yaml` behavior separately from core discovery. Validate and reinstall a changed plugin, then review its hook hash with `/hooks`.
+- Copilot: inspect `/skills list` or `copilot plugins list`. For a plugin, install the exact directory and verify its root `plugin.json`, hook discovery, and permission behavior.
+- OpenCode: run `opencode debug skill` and confirm the skill appears from the intended project or global location, then exercise the native `skill` tool. Check `opencode.json` permission patterns separately; an ignored frontmatter field is not a permission test.

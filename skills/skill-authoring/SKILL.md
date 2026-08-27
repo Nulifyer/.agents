@@ -11,6 +11,8 @@ This skill starts from a direct user request, a clearly named recurring failure,
 
 If the harness provides skill-authoring guidance, use it for discovery paths, metadata, invocation controls, and validation. For a skill intended to work in more than one harness, read [cross-harness.md](references/cross-harness.md) before choosing metadata, paths, dependencies, or invocation behavior. Keep the structure and writing style below.
 
+This shared collection targets Codex, GitHub Copilot, and OpenCode by default. A skill remains in that profile only when its portable package works in all three; declare narrower runtime or product requirements instead of implying compatibility.
+
 ## Fit
 
 Create or retain a skill when it addresses repeated work, an observed failure, or a decision the model cannot make reliably from ordinary context. Do not add a skill because a collection is popular or because its instructions sound useful in isolation.
@@ -57,6 +59,18 @@ Examples carry unusual weight in a language or style skill. Preserve enough repr
 9. Decide whether the behavior is intended for automatic selection or explicit use. Follow the target harness policy and preserve existing invocation settings unless the user asks to change them.
 10. Add human-facing README or setup docs only when requested or required for packaging. Link them from `SKILL.md` only when agents must read them.
 
+## Place collection files
+
+When editing a multi-harness collection, keep one structural contract:
+
+- portable packages under `skills/<name>/`;
+- host sidecars inside the owning skill only when other harnesses can safely ignore them;
+- lifecycle hooks, session APIs, and other host-only behavior under `adapters/<host>-<purpose>/`;
+- marketplace catalogs under the host-required catalog directory;
+- repository installers under root `scripts/`, cross-package checks under root `tests/`, and human documentation under root `docs/`.
+
+Do not create another top-level feature package. Do not copy portable instructions into each adapter. Keep an adapter self-contained as an installed unit and declare any shared skill or runtime it expects.
+
 ## Validate
 
 Test the completed skill with:
@@ -69,5 +83,7 @@ Test the completed skill with:
 - For a language or style skill, several representative outputs whose voice, rhythm, register, and forbidden habits can be judged without requiring exact wording.
 
 For cross-harness work, validate the standard package first, then test discovery and invocation in each claimed target harness. A field being ignored without error does not prove that it enforced the intended behavior.
+
+For this collection, a portability claim means Codex, Copilot, and OpenCode discovery has been checked against their current primary documentation. Run an available host directly; when a host is absent, record that only its package shape and documentation contract were verified.
 
 Judge whether the skill changed the model's decisions and produced the intended observable result. For an operational skill, test decisions and actions. For a language or style skill, language is observable behavior: review several outputs for the intended voice while preserving their meaning. Do not require exact generated sentences, headings, or incidental wording unless the interface requires them. Prune instructions that testing does not justify.
