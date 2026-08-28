@@ -97,7 +97,9 @@ async function validate(
 		}
 		const count = text.split(/\r?\n/).length - (text.endsWith("\n") ? 1 : 0);
 		if (count > limit)
-			errors.push(`.agents/${name}: ${count} lines exceeds maximum ${limit}`);
+			warnings.push(
+				`.agents/${name}: ${count} lines exceeds the ${limit}-line review threshold; remove stale or misplaced detail when safe`,
+			);
 		for (const placeholder of PLACEHOLDERS[name] ?? []) {
 			if (text.includes(placeholder))
 				errors.push(`.agents/${name}: replace scaffold text '${placeholder}'`);

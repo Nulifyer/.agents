@@ -60,6 +60,7 @@ Before pausing, compaction, handoff, or another batch:
 3. Resolve `scripts/continuity.ts` relative to this file. Run it with Bun,
    passing `validate`, `--project-root`, and the absolute repository root.
 
-Fix every validation error, including size limits, before starting another
-batch. If context quality drops, preserve safe partial work and close this
-boundary early.
+Fix structural validation errors before starting another batch. Treat
+compactness warnings as prompts to remove stale, repeated, or misplaced detail,
+not as hard limits. Keep detail the user or project still needs. If context
+quality drops, preserve safe partial work and close this boundary early.

@@ -43,9 +43,9 @@ gaps.
 Custom sections are allowed. Preserve user notes unless they are explicitly
 removed or superseded.
 
-## Size limits
+## Compactness guidance
 
-The validator rejects files above these maximums:
+The validator warns when a file crosses these review thresholds:
 
 - `README.md`: 80
 - `PLAN.md`: 200
@@ -53,8 +53,13 @@ The validator rejects files above these maximums:
 - `STATUS.md`: 100
 - `TESTING.md`: 140
 
-Shorten repeated prose first. Route factual docs through the repository index
-and split them by subject when needed. Keep only active and open decisions in
-normal read order. Archive superseded detail only when it still explains a
-current decision or risk. Name archives by subject under `.agents/archive/`;
-never create one per session, agent, commit, or test run.
+These are prompts, not limits. The model and user decide whether the content is
+still useful. Never delete necessary scope, decisions, current state, or test
+policy just to satisfy a number.
+
+When a file triggers review, remove stale and repeated prose first. Move stable
+facts to the smallest owning factual document and exact evidence to contracts
+or artifacts. Split factual docs by subject when needed. Keep only current or
+open decisions in normal read order. Archive superseded detail only when it
+still explains a current decision or risk. Name archives by subject under
+`.agents/archive/`; never create one per session, agent, commit, or test run.
