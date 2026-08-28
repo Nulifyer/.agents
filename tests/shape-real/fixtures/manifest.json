@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "path": "upstream/heading123.docx.b64",
+      "decodedName": "heading123.docx",
+      "source": "https://github.com/apache/poi/blob/5eeaeff15383573bf258d8b3050db41b86fd8b13/test-data/document/heading123.docx",
+      "revision": "5eeaeff15383573bf258d8b3050db41b86fd8b13",
+      "sha256": "dac67500b907811030ab2bdd5b1c65cda97a15651d6ec0d33592ef70d34a5550",
+      "license": "Apache-2.0",
+      "purpose": "DOCX heading styles from Apache POI's interoperability corpus"
+    },
+    {
+      "path": "upstream/ExcelTables.xlsx.b64",
+      "decodedName": "ExcelTables.xlsx",
+      "source": "https://github.com/apache/poi/blob/a71a9df56692ae30e16d1a991e468104a1aebf7e/test-data/spreadsheet/ExcelTables.xlsx",
+      "revision": "a71a9df56692ae30e16d1a991e468104a1aebf7e",
+      "sha256": "1e43011440eb39000d1751abaf9ded42d37b26f91b4f586a94bf91ce8ecbe9e5",
+      "license": "Apache-2.0",
+      "purpose": "XLSX table metadata from Apache POI's interoperability corpus"
+    },
+    {
+      "path": "upstream/petstore.yaml.b64",
+      "decodedName": "petstore.yaml",
+      "source": "https://github.com/OAI/OpenAPI-Specification/blob/cb37ec78d088430b51fb6610257b2534701c6133/_archive_/schemas/v3.0/pass/petstore.yaml",
+      "revision": "cb37ec78d088430b51fb6610257b2534701c6133",
+      "sha256": "598136cb904e17e8eeead51ae33dd8d401fdff455d2d74f3869c4aa5f2742266",
+      "license": "Apache-2.0",
+      "purpose": "OpenAPI path, operation, response, media-type, and schema metadata"
+    }
+  ]
+}

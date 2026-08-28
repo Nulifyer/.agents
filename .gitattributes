@@ -1,0 +1,33 @@
+# Keep source and documentation consistent across operating systems.
+* text=auto eol=lf
+
+*.md text diff=markdown
+*.ts text
+*.json text
+*.yaml text
+*.yml text
+*.graphql text
+*.proto text
+*.lock text
+
+# Fixture payloads are encoded for reproducibility, not line review.
+*.b64 text -diff linguist-generated=true
+bun.lock linguist-generated=true
+
+# Common documents and compiled artifacts must not be normalized as text.
+*.docx binary
+*.xlsx binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.dll binary
+*.exe binary
+*.so binary
+*.a binary
+*.lib binary
+*.o binary
+*.obj binary
+*.wasm binary
+*.sqlite binary
+*.sqlite3 binary
+*.db binary

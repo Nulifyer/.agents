@@ -35,9 +35,9 @@ Generated output should lead back to its schema, template, generator, or source 
 | Repository state and root | `git status`, `git rev-parse` |
 | Files, manifests, and candidate paths | `rg --files` with narrow globs; include hidden configuration roots when relevant |
 | Exact text, keys, routes, or symbols | One `rg -n` search with related alternatives |
-| Unknown source owner | `code-shape` match mode when available; otherwise targeted source search |
-| Known declaration or containing line | `code-shape` symbol or line focus when available; otherwise a narrow source read |
-| Long Markdown or design document | `doc-shape` when available, then exact line ranges; otherwise heading search |
+| Unknown source owner | `shape` code match mode when available; otherwise targeted source search |
+| Known declaration or containing line | `shape` code symbol or line focus when available; otherwise a narrow source read |
+| Long Markdown or design document | `shape` document mode when available, then exact line ranges; otherwise heading search |
 | API, database, or dataset structure | The matching shape skill when available; otherwise declared metadata or bounded local inspection |
 | Reason for an existing design or change | Targeted `git log` or `git blame` after current code is understood |
 

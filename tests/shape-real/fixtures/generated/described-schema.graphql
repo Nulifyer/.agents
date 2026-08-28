@@ -1,0 +1,15 @@
+"""
+Explains the type of object accepted by the operation.
+The implementation type is intentionally not part of this schema.
+"""
+type Account {
+  id: ID!
+  profile(locale: String): Profile
+}
+
+"""A scalar description containing union Choice and type Phantom."""
+scalar Timestamp
+
+union SearchResult = Account | Profile
+
+directive @audited(reason: String) on FIELD_DEFINITION

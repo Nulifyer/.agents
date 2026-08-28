@@ -125,3 +125,6 @@ dist
 
 # Workspace integration metadata
 /.codex/
+
+# Local agent work ledgers
+/.agents/work/

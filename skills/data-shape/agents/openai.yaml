@@ -1,4 +1,0 @@
-interface:
-  display_name: "Data Shape"
-  short_description: "Map payload, file, dotenv, and workbook structure"
-  default_prompt: "Use $data-shape to inspect this payload or file's structure without returning its values."

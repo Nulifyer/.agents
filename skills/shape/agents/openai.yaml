@@ -1,6 +1,6 @@
 interface:
   display_name: "Shape"
-  short_description: "Route mixed targets to focused shape tools"
-  default_prompt: "Use $shape to choose and run the right focused shape tool for these mixed targets."
+  short_description: "Map source, data, document, web, and binary shape"
+  default_prompt: "Use $shape to inspect this target's value-free structure and route to the right internal adapter."
 policy:
-  allow_implicit_invocation: false
+  allow_implicit_invocation: true

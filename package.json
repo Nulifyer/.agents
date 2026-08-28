@@ -7,7 +7,7 @@
     "check": "bun run typecheck && bun run lint && bun run test",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint --error-on-warnings .",
-    "test": "bun test skills"
+    "test": "bun test skills tests"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

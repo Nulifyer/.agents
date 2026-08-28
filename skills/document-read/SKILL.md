@@ -18,7 +18,7 @@ Keep `--engine auto` unless diagnosing an adapter. The command returns JSON with
 
 ## Use the cheapest sufficient stage
 
-1. Route native formats first. Read text and Markdown normally. Use `data-shape` for workbook structure and `doc-shape` for a document outline when those sibling skills are available. Use the host's image-inspection capability for an ordinary standalone image.
+1. Route native formats first. Read text and Markdown normally. Use the `shape` skill's `data` domain for workbook structure and its `document` domain for an outline when available. Use the host's image-inspection capability for an ordinary standalone image.
 2. Run the extractor once with defaults. Auto routing uses a small MarkItDown path for ordinary modern Office/email/EPUB, Docling for PDFs and layout-sensitive formats, and isolated ASR profiles for media.
 3. Work from the bounded preview and outline. If `textTruncated` is true, search or read narrow ranges from `markdownPath`; do not print the whole conversion into context.
 4. For PDFs with mixed text and figures, use `pictures` to connect captions and page/bounding-box provenance to `imagePaths`. Inspect only images relevant to the question.

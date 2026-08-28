@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-export type ShapeDomain = "api" | "data" | "database" | "document" | "web";
+export type ShapeDomain = "api" | "binary" | "code" | "data" | "database" | "document" | "web";
 export type ShapeAccess = "declared" | "metadata" | "observed" | "rendered";
 export type NameDisclosure = "show" | "hash" | "omit";
 
@@ -136,9 +136,10 @@ function dataTypeText(value: string | undefined, mode: NameDisclosure): string {
 function traitText(value: string, mode: NameDisclosure): string {
   const trait = safeText(value, 60);
   if (mode === "show" || !trait.includes("=")) return trait;
-  if (/^(?:hidden|level|members|pages|pk|sampled)=\d+$/.test(trait)) return trait;
+  if (/^[^=]+=[+-]?\d+(?:\.\d+)?$/.test(trait)) return trait;
   if (/^range=[A-Z]+\d+(?::[A-Z]+\d+)?$/i.test(trait)) return trait;
   if (/^origin=[cup]$/.test(trait)) return trait;
+  if (/^(?:runtime|version)=v?\d+(?:\.\d+)*(?:[-+][A-Za-z0-9.-]+)?$/i.test(trait)) return trait;
   const separator = trait.indexOf("=");
   const key = trait.slice(0, separator);
   const raw = trait.slice(separator + 1);

@@ -1,0 +1,3 @@
+Network_Count,14,,,,,,,,,,,,,,,,,,,,
+Network,Type,Input,Output,Layers,,,,,,,,,,,,,,,,,
+fixture,onnx,1,1,42,,,,,,,,,,,,,,,,,

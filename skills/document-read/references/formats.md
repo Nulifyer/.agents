@@ -8,7 +8,7 @@ The wrapper chooses an adapter and a pinned Python environment from the file ext
 |---|---|---|
 | PDF | Docling, automatic OCR, referenced images, Markdown + JSON | Use `--ocr force` for a scan with weak text; `--pages` for a narrow rerun; `--images describe` only when figures themselves must be interpreted |
 | DOCX, PPTX | MarkItDown | Use `--images extract` when embedded media or layout evidence matters; this routes through Docling |
-| XLSX | `data-shape` before conversion | Convert only when cell content is needed; query structured data directly when practical |
+| XLSX | `shape --as data` before conversion | Convert only when cell content is needed; query structured data directly when practical |
 | DOC, PPT, XLS | Docling | LibreOffice must be installed for legacy Office conversion |
 | ODT, ODP, ODS | Docling | Inspect extracted images only when they are evidence |
 | EML, MSG, EPUB | MarkItDown, with Docling fallback where supported | Force Docling only when MarkItDown loses required structure |

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package shape.fixture;
+
+message LookupRequest {
+  repeated string keys = 1;
+}
+
+message LookupReply {
+  int64 count = 1;
+}
+
+service Directory {
+  rpc Lookup(LookupRequest) returns (LookupReply);
+}

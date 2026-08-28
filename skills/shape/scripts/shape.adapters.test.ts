@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { renderShape, type CommonOptions, type ShapeResult } from "./lib/core.ts";
-import { shapeApi } from "../../api-shape/scripts/api-shape.ts";
-import { shapeData } from "../../data-shape/scripts/data-shape.ts";
-import { shapeDatabase } from "../../db-shape/scripts/db-shape.ts";
-import { shapeDocument } from "../../doc-shape/scripts/doc-shape.ts";
-import { shapeWeb } from "../../web-shape/scripts/web-shape.ts";
+import { shapeApi } from "./adapters/api.ts";
+import { shapeData } from "./adapters/data.ts";
+import { shapeDatabase } from "./adapters/database.ts";
+import { shapeDocument } from "./adapters/document.ts";
+import { shapeWeb } from "./adapters/web.ts";
 
 const CANARY = "SHAPE_PRIVATE_CANARY_7f92";
 const options: CommonOptions = { maxOutput: 8_000, json: false, names: "show", source: "show", labels: false };
@@ -66,21 +66,24 @@ function zip(entries: Record<string, string>): Buffer {
   return Buffer.concat([...locals, centralDirectory, end]);
 }
 
-function pdf(): Buffer {
-  const content = `BT
+function pdf(pageHeadings: string[][] = [["OPERATIONS REPORT"]]): Buffer {
+  const fontId = 3 + pageHeadings.length;
+  const firstContentId = fontId + 1;
+  const contents = pageHeadings.map((headings) => `BT
 /F1 20 Tf
 72 720 Td
-(OPERATIONS REPORT) Tj
+${headings.map((heading, index) => `${index ? "0 -28 Td\n" : ""}(${heading}) Tj`).join("\n")}
 /F1 10 Tf
 0 -40 Td
 (${CANARY}) Tj
-ET`;
+ET`);
+  const pageIds = pageHeadings.map((_, index) => 3 + index);
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`,
+    ...pageIds.map((_, index) => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${firstContentId + index} 0 R >>`),
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
+    ...contents.map((content) => `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`),
   ];
   const chunks = [Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", "latin1")];
   const offsets = [0];
@@ -325,6 +328,12 @@ describe("document shape adapters", () => {
     expect(labels).toContain("access=observed");
     expect(labels).toContain('section "OPERATIONS REPORT"');
     expect(labels).not.toContain(CANARY);
+
+    const repeatedPath = join(directory, "repeated-header.pdf");
+    await writeFile(repeatedPath, pdf([["OPERATIONS REPORT"], ["OPERATIONS REPORT", "2. DETAILS"]]));
+    const repeated = rendered(await shapeDocument(repeatedPath, undefined, { ...options, labels: true }), { labels: true });
+    expect(repeated.match(/section "OPERATIONS REPORT"/g)).toHaveLength(1);
+    expect(repeated).toContain('section "2. DETAILS" {inferred} [page 2]');
   });
 });
 
@@ -360,7 +369,7 @@ describe("CLI boundaries", () => {
   test("does not echo protected source text in parser errors", async () => {
     const path = join(directory, "malformed.json");
     await writeFile(path, `{"token": ${CANARY}}`);
-    const result = await runCli(join(import.meta.dir, "../../data-shape/scripts/data-shape.ts"), [path, "--access", "observed"]);
+    const result = await runCli(join(import.meta.dir, "adapters/data.ts"), [path, "--access", "observed"]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Invalid JSON input");
     expect(result.stderr).not.toContain(CANARY);
@@ -370,7 +379,7 @@ describe("CLI boundaries", () => {
   test("can hide protected source paths and structural identifiers end to end", async () => {
     const path = join(directory, `private-${CANARY}.json`);
     await writeFile(path, JSON.stringify({ [`field_${CANARY}`]: CANARY }));
-    const result = await runCli(join(import.meta.dir, "../../data-shape/scripts/data-shape.ts"), [
+    const result = await runCli(join(import.meta.dir, "adapters/data.ts"), [
       path,
       "--access",
       "observed",
@@ -387,11 +396,11 @@ describe("CLI boundaries", () => {
 
   test("accepts stdin for API, data, document, and web shapes", async () => {
     const cases = [
-      ["../../api-shape/scripts/api-shape.ts", ["-", "schema.json"], JSON.stringify({ $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: { secret: { type: "string", example: CANARY } } }), "api json-schema"],
-      ["../../data-shape/scripts/data-shape.ts", ["-", "events.jsonl"], `${JSON.stringify({ id: 1, secret: CANARY })}\n`, "data jsonl"],
-      ["../../data-shape/scripts/data-shape.ts", ["-", "response.xml"], `<Response token="${CANARY}"><Patient>${CANARY}</Patient></Response>`, "data xml"],
-      ["../../doc-shape/scripts/doc-shape.ts", ["-", "guide.md", "--labels"], `# Guide\n\n${CANARY}\n`, "document markdown"],
-      ["../../web-shape/scripts/web-shape.ts", ["-", "page.html", "--labels"], `<main><button>Continue</button><p>${CANARY}</p></main>`, "web html-static"],
+      ["adapters/api.ts", ["-", "schema.json"], JSON.stringify({ $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: { secret: { type: "string", example: CANARY } } }), "api json-schema"],
+      ["adapters/data.ts", ["-", "events.jsonl"], `${JSON.stringify({ id: 1, secret: CANARY })}\n`, "data jsonl"],
+      ["adapters/data.ts", ["-", "response.xml"], `<Response token="${CANARY}"><Patient>${CANARY}</Patient></Response>`, "data xml"],
+      ["adapters/document.ts", ["-", "guide.md", "--labels"], `# Guide\n\n${CANARY}\n`, "document markdown"],
+      ["adapters/web.ts", ["-", "page.html", "--labels"], `<main><button>Continue</button><p>${CANARY}</p></main>`, "web html-static"],
     ] as const;
     for (const [relativeScript, args, input, expected] of cases) {
       const result = await runCli(join(import.meta.dir, relativeScript), [...args], input);

@@ -8,7 +8,7 @@ compatibility: Requires the sqlgo CLI. Database connections may also require net
 
 Use sqlgo's non-interactive verbs for agent work. A bare `sqlgo` starts the TUI.
 
-Use `db-shape` or `data-shape` instead when structure alone answers the task or protected values must stay out of model context.
+Use the `shape` skill's `database` or `data` domain instead when structure alone answers the task or protected values must stay out of model context.
 
 Check the installed command before relying on remembered flags:
 

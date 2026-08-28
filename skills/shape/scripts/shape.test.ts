@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Database } from "bun:sqlite";
 import { renderShape, type CommonOptions, type ShapeResult } from "./lib/core.ts";
-import { shapeApi } from "../../api-shape/scripts/api-shape.ts";
-import { shapeData } from "../../data-shape/scripts/data-shape.ts";
-import { shapeDatabase } from "../../db-shape/scripts/db-shape.ts";
-import { shapeDocument } from "../../doc-shape/scripts/doc-shape.ts";
-import { shapeWeb } from "../../web-shape/scripts/web-shape.ts";
+import { shapeApi } from "./adapters/api.ts";
+import { shapeData } from "./adapters/data.ts";
+import { shapeDatabase } from "./adapters/database.ts";
+import { shapeDocument } from "./adapters/document.ts";
+import { shapeWeb } from "./adapters/web.ts";
 import { routeByQuestion, routeByTarget } from "./shape.ts";
 
 const CANARY = "SHAPE_PRIVATE_CANARY_7f92";
@@ -33,14 +33,14 @@ describe("shape family", () => {
     expect(routeByQuestion("Where is this config key implemented?")).toBe("code");
     expect(routeByQuestion("Which controls can a user click?")).toBe("web");
     expect(routeByQuestion("Show the workbook sheets and columns")).toBe("data");
-    expect(routeByQuestion("What tables have foreign keys?")).toBe("db");
+    expect(routeByQuestion("What tables have foreign keys?")).toBe("database");
     expect(routeByQuestion("Show the XML payload structure without its values")).toBe("data");
     expect(routeByQuestion("Which environment variable names are declared?")).toBe("data");
-    expect(routeByTarget("guide.md")).toBe("doc");
+    expect(routeByTarget("guide.md")).toBe("document");
     expect(routeByTarget("records.csv")).toBe("data");
     expect(routeByTarget("service/.env.production")).toBe("data");
     expect(routeByTarget("contract.proto")).toBe("api");
-    expect(routeByTarget("page.html")).toBeUndefined();
+    expect(routeByTarget("page.html")).toBe("web");
     expect(routeByTarget("payload.json")).toBeUndefined();
     expect(routeByTarget("payload.xml")).toBeUndefined();
     expect(routeByTarget("query.sql")).toBeUndefined();
@@ -147,7 +147,7 @@ components:
         kind: "field",
         name: `private_${index}`,
         dataType: index === 0 ? `Patient_${CANARY}` : "string",
-        traits: index === 0 ? [`fk=patient_${CANARY}.id`, `to=/patient/${CANARY}`] : undefined,
+        traits: index === 0 ? [`fk=patient_${CANARY}.id`, `to=/patient/${CANARY}`, "bytes=146944", "functions=3"] : undefined,
         locator: { type: "pointer", value: `/private_${index}/${CANARY}` },
       })) }],
     };
@@ -160,6 +160,8 @@ components:
     expect(hashed).toContain("[pointer #");
     expect(hashed).not.toContain("private_");
     expect(hashed).not.toContain(CANARY);
+    expect(hashed).toContain("bytes=146944");
+    expect(hashed).toContain("functions=3");
     const small = rendered(result, { maxOutput: 180 });
     const large = rendered(result, { maxOutput: 500 });
     const smallBranches = small.split("\n").filter((line) => !line.startsWith("[") && line !== small.split("\n")[0]);

@@ -2,20 +2,24 @@
 
 Choose by question before extension.
 
-| Goal | Skill |
+| Goal | Domain |
 |---|---|
-| Find source ownership, declarations, callbacks, config keys, SQL statements, or raw HTTP definitions | `code-shape` |
-| Map visible or accessible landmarks, controls, forms, links, and headings | `web-shape` |
-| Map headings, sections, pages, tables, figures, and document containers | `doc-shape` |
-| Map fields, columns, arrays, sheets, dimensions, XML elements and attributes, `.env` keys, and storage schemas | `data-shape` |
-| Map live schemas, tables, views, columns, keys, indexes, and relationships | `db-shape` |
-| Map endpoints, operations, messages, request and response schemas, or type systems | `api-shape` |
+| Find source ownership, declarations, callbacks, config keys, SQL statements, or raw HTTP definitions | `code` |
+| Map visible or accessible landmarks, controls, forms, links, and headings | `web` |
+| Map headings, sections, pages, tables, figures, and document containers | `document` |
+| Map fields, columns, arrays, sheets, dimensions, XML elements and attributes, `.env` keys, and storage schemas | `data` |
+| Map live schemas, tables, views, columns, keys, indexes, and relationships | `database` |
+| Map endpoints, operations, messages, request and response schemas, or type systems | `api` |
+| Map compiled image, library, section, import/export, runtime, or archive metadata | `binary` |
 
 Ambiguous examples:
 
-- HTML implementation questions use `code-shape`; page interaction questions use `web-shape`.
-- JSON configuration uses `code-shape`; records use `data-shape`; OpenAPI and JSON Schema use `api-shape`.
-- `.env` key inventory uses `data-shape`; finding where an environment key is read uses `code-shape`.
-- XML instance payloads use `data-shape`; WSDL and other declared XML contracts require a supported API adapter rather than treating an example payload as a contract.
-- SQL files use `code-shape`; live databases and SQLite files use `db-shape`.
-- Notebook narrative uses `doc-shape`; implementation inside a code cell uses `code-shape` after extracting that cell.
+- HTML implementation questions use `code`; page interaction questions use `web`.
+- JSON configuration uses `code`; records use `data`; OpenAPI and JSON Schema use `api`.
+- `.env` key inventory uses `data`; finding where an environment key is read uses `code`.
+- XML instance payloads use `data`; WSDL and other declared XML contracts require a supported API adapter.
+- SQL files use `code`; live databases and SQLite files use `database`.
+- Notebook narrative uses `document`; implementation inside a code cell uses `code` after extraction.
+- A native DLL uses `binary`; source that produces or loads it uses `code`.
+
+The router refuses content-ambiguous JSON, XML, YAML, and SQL unless the question or `--as` resolves the domain. A specific non-binary extension such as `.graphql` or `.proto` routes without reading a header, so `--access declared` remains enforceable. Binary and extensionless targets use bounded header evidence; magic bytes and conservative COFF-header checks outrank fallback source guesses. `--adapter` is an explicit override and should be used only when the caller knows the format.

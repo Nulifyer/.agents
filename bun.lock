@@ -11,11 +11,24 @@
         "typescript": "^5.9.0",
       },
     },
-    "skills/code-shape": {
-      "name": "@nulifyer/code-shape",
+    "skills/document-read": {
+      "name": "@nulifyer/document-read",
       "version": "0.1.0",
       "bin": {
-        "code-shape": "./scripts/code-shape.ts",
+        "document-read": "./scripts/document-read.ts",
+      },
+    },
+    "skills/shape": {
+      "name": "@nulifyer/shape",
+      "version": "0.1.0",
+      "bin": {
+        "shape": "./scripts/shape.ts",
+        "code-shape": "./scripts/compat/code-shape.ts",
+        "api-shape": "./scripts/compat/api-shape.ts",
+        "data-shape": "./scripts/compat/data-shape.ts",
+        "db-shape": "./scripts/compat/db-shape.ts",
+        "doc-shape": "./scripts/compat/doc-shape.ts",
+        "web-shape": "./scripts/compat/web-shape.ts",
       },
       "dependencies": {
         "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
@@ -30,13 +43,6 @@
         "tree-sitter-wasm": "1.1.4",
         "tree-sitter-wasms": "0.1.13",
         "web-tree-sitter": "0.25.10",
-      },
-    },
-    "skills/document-read": {
-      "name": "@nulifyer/document-read",
-      "version": "0.1.0",
-      "bin": {
-        "document-read": "./scripts/document-read.ts",
       },
     },
     "skills/youtube-transcript": {
@@ -71,9 +77,9 @@
 
     "@hallelx/youtube-transcript": ["@hallelx/youtube-transcript@0.2.0", "", { "peerDependencies": { "undici": ">=5" }, "optionalPeers": ["undici"], "bin": { "youtube-transcript": "dist/cli.js" } }, "sha512-xaUiACZo9S4YHXCqr1XIhOc3vgI2sjQf+FnFkUvxbv84J1GicC4RrjUiVWmQlMI8hJW4ztyqDZFcalXquPRpjg=="],
 
-    "@nulifyer/code-shape": ["@nulifyer/code-shape@workspace:skills/code-shape"],
-
     "@nulifyer/document-read": ["@nulifyer/document-read@workspace:skills/document-read"],
+
+    "@nulifyer/shape": ["@nulifyer/shape@workspace:skills/shape"],
 
     "@nulifyer/youtube-transcript": ["@nulifyer/youtube-transcript@workspace:skills/youtube-transcript"],
 

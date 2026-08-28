@@ -33,3 +33,5 @@ a skill.
 ```text
 bun run check
 ```
+
+`bun run test` includes the focused skill suites and the repository-local real-file shape corpus. The latter verifies pinned upstream fixture checksums and exercises available native artifact producers through the public `shape` CLI.
