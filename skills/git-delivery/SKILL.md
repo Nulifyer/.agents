@@ -36,13 +36,22 @@ If hooks or formatters change files during commit, inspect the new state. Do not
 
 ## Write the commit
 
-Follow repository style first. Otherwise prefer a compact conventional subject when it fits:
+Follow repository style first. Inspect enough recent subjects to identify whether
+the repository consistently uses scoped Conventional Commits. When it does, or
+when the user requests this format, write every first line as:
 
 ```text
 type(scope): changed behavior
 ```
 
-Use `fix`, `feat`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, or `chore` for their ordinary meanings. Choose a scope that helps someone scan history; omit it when it adds no information.
+Use `fix`, `feat`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, or `chore`
+for their ordinary meanings. Name the owning component, subsystem, package, or
+documentation area in `scope`, using the repository's existing scope names when
+available. The scope is a history index, so preserve it even when the type and
+message would be understandable without it. Omit the scope only when repository
+history omits scopes, the user has not requested one, and no useful target exists.
+Do not silently fall back from `feat(parser): ...` to `feat: ...` in a repository
+whose history uses the scoped form.
 
 Write the subject like a tiny release note. Name the observable result, not the activity performed. Treat this first line as the commit's shorthand: `git log --oneline`, history lists, release tooling, and squash interfaces often show only the subject. It must stand alone; never rely on the body to make a vague subject meaningful.
 
