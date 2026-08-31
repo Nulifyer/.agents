@@ -22,6 +22,12 @@ directory compact and current during long-running work. It also defines the
 verified batch loop: address one logical result, validate and test it, stage and
 commit only that result, then repeat from the next action.
 
+`active-worker-research` reviews an active implementation stream and researches
+the highest-value missing facts without becoming another code owner.
+`oracle-lab` defines repeatable black-box and differential experiments against a
+reference system. `reverse-engineering` owns bounded static artifact analysis;
+it can supply call shape and control-flow evidence to an oracle experiment.
+
 These portable skills do not create sessions, manage goals, or orchestrate
 subagents. Each host owns execution and session lifecycle.
 

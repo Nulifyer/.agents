@@ -40,11 +40,23 @@ adopting, repairing, splitting, or shrinking the standard files.
 When the user or repository authorizes autonomous commits, repeat:
 
 1. Select one logical, independently reviewable result from `Next action`.
-2. Implement the related changes and update their owning docs or decisions.
-3. Replace `STATUS.md` with the resulting current state and one next action.
-4. Run the required validation and tests. Repair failures within the same batch.
-5. Review the diff, stage only the batch, and commit it after required checks pass.
-6. Confirm unrelated work remains untouched, then begin the next batch.
+   Name the behavior owner and existing interface before adding code. The next
+   missing symbol, failing assertion, or trace event chooses what to inspect;
+   it does not automatically define the module or commit boundary.
+2. Size the batch around one owner and observable result. Group a small family
+   of coupled functions when they share state, evidence, and verification and
+   intermediate commits add no review value. Split work when owners, lifetimes,
+   risk, or proof differ.
+3. Implement the related changes and update their owning docs or decisions.
+   Reuse or deepen an existing owner instead of adding a parallel special case.
+4. Use focused checks while iterating. Run broader required gates once the
+   batch is stable, and rerun them only when later edits could invalidate them.
+5. Replace `STATUS.md` with the resulting current state and one next action.
+6. Review the diff, stage only the batch, and commit it after required checks
+   pass. Use the `git-delivery` workflow when it is available so repository
+   subject style and staged-file ownership remain intact.
+7. Confirm unrelated and concurrently created work remains untouched, then
+   begin the next batch.
 
 Without commit authority, stop after verified changes and record their
 uncommitted state. A partial result may be committed only when it is useful and
@@ -62,5 +74,8 @@ Before pausing, compaction, handoff, or another batch:
 
 Fix structural validation errors before starting another batch. Treat
 compactness warnings as prompts to remove stale, repeated, or misplaced detail,
-not as hard limits. Keep detail the user or project still needs. If context
-quality drops, preserve safe partial work and close this boundary early.
+not as hard limits. Do not normalize a warning that repeats until it stops being
+useful: when the current batch touches that record, move historical detail to
+its owner and restore a readable current snapshot. Keep detail the user or
+project still needs. If context quality drops, preserve safe partial work and
+close this boundary early.
