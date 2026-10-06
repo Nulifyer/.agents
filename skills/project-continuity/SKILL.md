@@ -35,6 +35,10 @@ project boundaries remain unsettled.
 Read [the artifact contract](references/artifact-contract.md) when creating,
 adopting, repairing, splitting, or shrinking the standard files.
 
+Use the `clear-technical-writing` skill when writing or revising continuity
+records and their owning technical documentation. Its clarity rules must not
+weaken evidence, status, requirements, or exact identifiers.
+
 ## Run verified batches
 
 When the user or repository authorizes autonomous commits, repeat:
@@ -61,6 +65,31 @@ When the user or repository authorizes autonomous commits, repeat:
 Without commit authority, stop after verified changes and record their
 uncommitted state. A partial result may be committed only when it is useful and
 verified on its own, with its limits documented.
+
+## Resolve undocumented behavior efficiently
+
+When a compatibility, reverse-engineering, or startup batch stalls on unknown
+behavior, preserve the first failing boundary and climb this evidence ladder:
+
+1. Retain a bounded trace or other reproducible artifact that names the exact
+   failing process, interface, status, and ordering. Reuse it until a specific
+   unanswered question requires another run.
+2. For a compiled owner, inspect a matching-symbol decompile before attaching a
+   debugger. Record the binary and symbol identity so a plausible but mismatched
+   decompile cannot become project fact.
+3. Read the smallest owning public implementation or adapter source available,
+   such as Wine, Proton, ReactOS, FEX, or the project's host layer. Prefer its
+   established seam over a local special case.
+4. Add one narrow diagnostic log, oracle, or differential fixture for one named
+   ambiguity. Decide before running it which observations distinguish the
+   competing explanations, then retain the result as evidence.
+5. Use a debugger only when the remaining question requires live state that the
+   retained artifact, decompile, source, and bounded experiment cannot expose.
+
+Do not repeat debugger setup or broad trace collection without a new question.
+After each observation, update the hypothesis and choose the cheapest next
+artifact that can falsify it. Remove temporary diagnostics before delivery and
+move durable findings to their factual owner.
 
 ## Close a boundary
 
