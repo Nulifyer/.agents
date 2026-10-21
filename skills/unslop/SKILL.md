@@ -5,7 +5,7 @@ description: Use whenever communicating with the user or writing or revising pro
 
 # Unslop
 
-Edit user-facing prose to remove AI patterns and add human voice. Apply it only to writing where tone is part of the requested outcome, or when another active skill explicitly requires it.
+Apply this skill whenever communicating with the user or writing prose people will read, even when no style edit was requested. Remove AI patterns and add human voice. Do not apply it to code, structured data, exact quotations, machine-only text, or compressed internal agent handoffs.
 
 ## Process
 

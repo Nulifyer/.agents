@@ -5,35 +5,25 @@ description: Use when reporting tool or research findings, diagnosis, consequent
 
 # Evidence discipline
 
-Match each claim to what was actually observed. Honesty may mean verifying a claim, narrowing it, labeling it as an inference, or saying it was not checked.
+Match each claim to the available evidence. Verify it, narrow it, label it as an inference, or say what remains unknown.
 
 ## Keep claims grounded
 
-- State an action as completed only when it actually ran or an external system confirmed it.
-- Describe file contents, command output, application state, and source claims from evidence you inspected in this task.
-- Distinguish observation from inference. Give the reason for an inference when the distinction matters.
+- Claim completion only for actions that ran or were confirmed by an external system.
+- Base factual reports on evidence you inspected. Distinguish observed facts from inference when it matters, and give the reason for the inference.
 - Treat missing, stale, partial, or conflicting evidence as unknown. Do not turn absence of evidence into a positive claim.
 - Correct earlier claims plainly when later evidence disproves them.
 
-Use exact evidence pointers when they help the user inspect or reproduce a consequential claim. A pointer can be a file and line, command and relevant output, test name, artifact path, source link, record identifier, or external status. Do not add citations or evidence tables to claims that do not need them.
+Give an exact file, command result, test, artifact, source, or status when it helps the reader inspect a consequential claim.
 
 ## Keep verification proportional
 
-Verify what the user's requested outcome, normal implementation practice, or the cost of being wrong requires. Prefer the cheapest check that directly tests the claim.
+Use the cheapest check that establishes the claim, while meeting the requested outcome and required checks.
 
-Do not create extra experiments, broad test runs, web research, or external actions merely to avoid admitting a limitation. For low-stakes or informational work, a precise statement such as `I did not run the application` can be sufficient. Ask for more authority only when the missing check is required to complete the requested outcome safely or accurately.
+Do not add experiments, broad test runs, research, or external actions merely to avoid admitting a limitation. Consider the cost of being wrong. Ask for additional authority only when a necessary check requires it and existing authorization does not cover it.
 
-A passing check supports only what it covers. Before using it as strong evidence, confirm that it exercised the relevant code or condition when that question is material. Do not demand a deliberate failure demonstration for routine, low-risk checks unless a false green is plausible and consequential.
+A passing check supports only what it covered. Confirm that it exercised the relevant behavior when that is uncertain and material. Do not require a deliberate failure demonstration for a routine check unless a false pass is plausible and consequential.
 
-## Report outcomes without ceremony
+## Report the result
 
-Keep changed state separate from verified state:
-
-```text
-Changed: what was modified or requested
-Verified: checks actually run and what they established
-Not verified: relevant checks not run, only when the omission affects the user's understanding
-Unknown: unresolved facts that matter to the outcome
-```
-
-Use this structure only when it makes the result clearer. Usually, weave the distinctions into normal prose. Do not inflate a simple response with confidence scores, proof ladders, or disclaimers.
+Distinguish what changed, what was verified, and what remains unknown. Name the checks and their coverage when material. Mention unperformed checks only when the omission affects the reader's understanding. No fixed report format, confidence score, or evidence table is required.

@@ -22,11 +22,11 @@ Keep work with the parent when it is small, depends on the parent's evolving rea
 
 Parallelize only tasks with independent inputs, outputs, and state. If one result changes another task's scope, run them sequentially. Keep integration, conflict resolution, permission decisions, and the final user response with the parent.
 
-## Match effort to the task
+## Follow the host's execution rules
 
-Use the least expensive worker likely to complete a bounded, verifiable task. Use more capable reasoning for ambiguous investigation, integration design, high-risk review, or work whose mistakes are hard to detect.
+The host owns delegation tools, provider and model selection, retries, task tracking, and checkout setup. Preserve inherited settings unless a change is permitted. When worker selection is permitted, choose the least expensive available worker likely to complete the task reliably.
 
-After a failed attempt, do not resend the same task unchanged. Improve the boundary, context, evidence, model capability, or verification method. Bring the work back to the parent when repeated delegation adds no new information.
+Distinguish a failed worker attempt from a failed tool request. For tool retries, follow the host's retry and task-tracking rules and check whether work already started before creating another task. After a failed worker attempt, improve the boundary, context, evidence, permitted model capability, or verification method. Bring the work back to the parent when repeated delegation adds no new information.
 
 ## Build the work packet
 
@@ -36,15 +36,18 @@ Give each worker only what it needs:
 Objective: one concrete outcome
 Deliverable: exact artifact or answer to return
 Scope: files, subsystem, data, or question owned by this worker
+Starting state: repository, revision, and required uncommitted inputs
 Known facts: verified facts with paths or other evidence pointers
 Constraints: user choices, permissions, exclusions, and invariants
-Inputs: required files, artifacts, commands, or work-ledger sections
+Inputs: required files, artifacts, commands, skills, or work-ledger sections
 Verification: checks the worker should run or evidence it should collect
 Return: findings, changes, evidence, uncertainty, and blockers
 Stop when: completion condition or reason to escalate
 ```
 
 Do not paste the full conversation when a short packet and evidence pointers are enough. Preserve exact identifiers, negations, numbers, errors, and user constraints. Treat parent conclusions as leads unless their evidence is included.
+
+Confirm which files and changes the child's checkout contains. Make required inputs and skills accessible to the child, including `unslop` for human-facing deliverables. Do not assume a separate checkout contains uncommitted parent edits or another provider can discover the same skills.
 
 When a `work-ledger` exists, pass its path and name the sections the worker must read. The ledger owns durable task state. A worker returns proposed ledger updates to the parent unless the packet explicitly assigns it a separate file.
 

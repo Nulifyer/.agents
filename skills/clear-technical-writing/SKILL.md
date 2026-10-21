@@ -1,13 +1,18 @@
 ---
 name: clear-technical-writing
-description: Use when writing or revising technical documentation, procedures, runbooks, architecture or decision records, API or CLI docs, reports, release notes, project continuity files, or technical explanations. Makes technical prose easy to understand with an ASD-STE100-inspired style; do not use for code, exact quotations, casual prose, or claims of formal STE compliance.
+description: Use whenever communicating technical information to a person, including chat replies, progress updates, explanations, documentation, procedures, and reports. Make the information easy to understand on the first reading. Do not rewrite code, exact quotations, or machine-only text, or apply this skill to nontechnical conversation.
 ---
 
 # Clear technical writing
 
-Write for a reader who must understand the information or do the task correctly
-on the first reading. This skill uses most of the practical discipline of
-ASD-STE100, but it does not claim formal compliance.
+Make technical information easy to understand on the first reading, including
+in ordinary conversation. Lead with what happens, why it matters, or what the
+reader needs to do. Include technical detail when it helps the reader understand
+the result or make a decision. Explain necessary technical terms in familiar
+words instead of assuming the reader knows them.
+
+This skill adapts the practical discipline of ASD-STE100. It does not claim
+formal compliance.
 
 ## Write clearly
 
@@ -61,6 +66,9 @@ After:  The loader validates the manifest before initialization.
 
 Before: If the cache is stale, the operator must perform regeneration of it.
 After:  If the cache is stale, regenerate it.
+
+Before: The worker polls the queue.
+After:  The worker checks the queue repeatedly for new jobs.
 ```
 
 ## Know the adaptation boundary
