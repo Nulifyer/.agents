@@ -128,3 +128,7 @@ dist
 
 # Local agent work ledgers
 /.agents/work/
+
+# omarchy os skills
+skills/diagnose-crash
+skills/omarchy
