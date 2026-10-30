@@ -18,6 +18,8 @@
     "./code": "./scripts/adapters/code/lib/index.ts"
   },
   "scripts": {
+    "setup": "bun install && bun run check:setup",
+    "check:setup": "bun --no-install scripts/check-setup.ts",
     "test": "bun test scripts"
   },
   "dependencies": {

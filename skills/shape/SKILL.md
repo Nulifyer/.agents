@@ -1,12 +1,14 @@
 ---
 name: shape
 description: Use first when mapping value-free structure or implementation ownership from source trees, API contracts, payloads, databases, documents, web pages, or compiled binaries. Routes mixed and extensionless targets internally; use a direct adapter when the format is already known.
-compatibility: Requires Bun. Source shaping also requires ripgrep and the package dependencies. Some document, database, and remote adapters require the optional commands listed in their references.
+compatibility: Requires Bun. Source shaping also requires ripgrep and package dependencies installed with bun run setup from this skill directory. First setup requires network access to download prebuilt Tree-sitter WASM packages. Some document, database, and remote adapters require the optional commands listed in their references.
 ---
 
 # Shape
 
 Inspect structure before reading broad content. The command reports its access boundary and returns compact names, kinds, nesting, and locators without returning payload values or source bodies.
+
+On a new installation, install Bun and ripgrep, then run `bun run setup` from this skill directory. This installs dependencies and verifies every Tree-sitter WASM grammar and query. No global Tree-sitter installation or WASM build tools are required. To check an existing installation without downloads, run `bun run check:setup`.
 
 Resolve local targets from the caller's working directory, then run from this skill directory:
 

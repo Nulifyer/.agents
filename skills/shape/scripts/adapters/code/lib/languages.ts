@@ -56,7 +56,7 @@ const C_QUERY = `
 (preproc_def) @constant
 `;
 
-const LANGUAGE_SPECS: LanguageSpec[] = [
+export const LANGUAGE_SPECS: LanguageSpec[] = [
   {
     id: "typescript",
     extensions: [".ts", ".mts", ".cts"],

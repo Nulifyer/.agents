@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": ["skills/*"],
   "scripts": {
+    "setup": "bun install --frozen-lockfile && bun run --cwd skills/shape check:setup",
     "check": "bun run typecheck && bun run lint && bun run test",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint --error-on-warnings .",
