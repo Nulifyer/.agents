@@ -25,14 +25,7 @@ const CONTRACT: Contract = {
 		200,
 	],
 	"STATUS.md": [
-		[
-			"Project state",
-			"Current batch",
-			"In progress",
-			"Next action",
-			"Blockers",
-			"Verification",
-		],
+		["Project state", "Next action", "Blockers", "Verification"],
 		100,
 	],
 	"TESTING.md": [
@@ -74,6 +67,58 @@ function sectionNames(text: string): Set<string> {
 	);
 }
 
+function sectionContent(text: string, name: string): string {
+	const headings = [...text.matchAll(/^##[\t ]+(.+?)[\t ]*\r?$/gm)];
+	const index = headings.findIndex((heading) => heading[1] === name);
+	const heading = headings[index];
+	if (!heading) return "";
+	return text
+		.slice(heading.index + heading[0].length, headings[index + 1]?.index)
+		.trim();
+}
+
+async function validateStatus(state: string, text: string): Promise<string[]> {
+	const errors: string[] = [];
+	const found = sectionNames(text);
+	if (found.has("Active tasks")) {
+		const tasks = sectionContent(text, "Active tasks");
+		if (!tasks)
+			errors.push(
+				".agents/STATUS.md: Active tasks must describe current work or explicitly state none",
+			);
+		for (const match of tasks.matchAll(
+			/\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g,
+		)) {
+			const target = match[1] ?? match[2];
+			if (!target || /^(?:[a-z][a-z\d+.-]*:|#|\/\/)/i.test(target)) continue;
+			try {
+				const file = decodeURIComponent(target.split(/[?#]/, 1)[0] ?? "");
+				if (
+					!(
+						await stat(path.resolve(state, file)).catch(() => undefined)
+					)?.isFile()
+				)
+					errors.push(
+						`.agents/STATUS.md: local task link is not a file: ${target}`,
+					);
+			} catch {
+				errors.push(`.agents/STATUS.md: invalid local task link: ${target}`);
+			}
+		}
+	} else {
+		for (const section of ["Current batch", "In progress"])
+			if (!found.has(section))
+				errors.push(
+					`.agents/STATUS.md: missing section '## ${section}' or use '## Active tasks'`,
+				);
+	}
+	if (!sectionContent(text, "Next action"))
+		errors.push(
+			".agents/STATUS.md: Next action must contain a concrete task or coordination action",
+		);
+	return errors;
+}
+
 async function validate(
 	root: string,
 ): Promise<{ errors: string[]; warnings: string[] }> {
@@ -109,11 +154,7 @@ async function validate(
 	const statusPath = path.join(state, "STATUS.md");
 	if (existsSync(statusPath)) {
 		const text = await readFile(statusPath, "utf8");
-		const match = /^## Next action\s*$\n(.*?)(?=^##\s|\s*$)/ms.exec(text);
-		if (!match?.[1]?.trim())
-			errors.push(
-				".agents/STATUS.md: Next action must contain one concrete action",
-			);
+		errors.push(...(await validateStatus(state, text)));
 	}
 	return { errors, warnings };
 }

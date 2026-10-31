@@ -49,7 +49,7 @@ Do not paste the full conversation when a short packet and evidence pointers are
 
 Confirm which files and changes the child's checkout contains. Make required inputs and skills accessible to the child, including `unslop` for human-facing deliverables. Do not assume a separate checkout contains uncommitted parent edits or another provider can discover the same skills.
 
-When a `work-ledger` exists, pass its path and name the sections the worker must read. The ledger owns durable task state. A worker returns proposed ledger updates to the parent unless the packet explicitly assigns it a separate file.
+Pass the relevant project constraints and task context. When a task ledger exists, pass its path and only the sections the worker needs. The task owner maintains that ledger; workers return proposed updates unless explicitly assigned record ownership. Independent task leads may own separate ledgers. Ordinary delegation does not require a ledger or a separate file for every worker.
 
 ## Keep internal handoffs dense
 
@@ -75,5 +75,5 @@ The parent must:
 1. Check that each result stayed within scope and includes the requested evidence.
 2. Resolve conflicts against source artifacts or fresh verification, not by majority vote.
 3. Review overlapping changes before integration and run the relevant combined checks.
-4. Update the `work-ledger`, when present, with durable findings, decisions, changes, and remaining unknowns.
+4. Have the owning agent update the relevant task record, when present, with verified findings, changes, and remaining unknowns. Update project status only when overall capability, coordination, or integration changes. Distinguish a returned result from integrated and accepted work.
 5. Apply `unslop` to the user-facing response and human-readable artifacts. Never forward compressed handoffs unchanged.

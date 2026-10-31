@@ -1,110 +1,65 @@
 ---
 name: project-continuity
-description: Use when resuming long-running repository work, closing a verified batch, recovering after compaction, or preparing a session handoff where .agents owns project state. Do not use for one-off tasks or unsettled project definition.
-compatibility: Requires Bun to run the bundled validator.
+description: Use when substantial repository work needs durable intent, progress, or coordination across sessions, tasks, or agents, or when resuming existing work records. Skip routine one-off work.
+compatibility: Requires Bun for the standard-layout validator.
 ---
 
 # Project continuity
 
-Keep `.agents` as compact current project state. Git, factual documentation,
-contracts, and evidence artifacts preserve detail and history. This skill does
-not manage goals, sessions, or subagents.
+Preserve the user's intended outcome and enough verified state to continue work without reconstructing the conversation. The host owns goal APIs, agent sessions, scheduling, and permissions.
 
-## Resume
+## Choose proportionate records
 
-1. Read repository `AGENTS.md`, then `.agents/README.md` and its indexed files.
-2. Check the worktree and relevant artifacts before trusting recorded state.
-3. Start from the single `Next action`. Repair stale or ambiguous state first.
-4. Open only the factual documents needed for the current batch.
+Reuse existing project conventions and trackers. Do not create records merely because tools or several agents are involved. Reading a CSV, answering a bounded question, or making a small self-contained edit normally needs no new ledger.
 
-Use project-inception when the standard files are missing and consequential
-project boundaries remain unsettled.
+Use project records for durable goals, boundaries, decisions, and overall progress. Add a task ledger when an independently resumable outcome needs its own scope, acceptance evidence, ownership, dependencies, or handoff state. A long-running standalone task may need one ledger without a full project bootstrap. A simple ongoing project may keep its only task in project status.
+
+Create or update records only within existing write authority. For read-only work, return a proposed checkpoint instead of creating files.
+
+## Establish and recover intent
+
+Read governing instructions and the relevant project and task records. Compare them with the current user request and later steering. Check the relevant worktree, artifacts, and evidence before trusting recorded progress.
+
+Retain the requested outcome, its source, scope, constraints, and observable acceptance checks. Separate confirmed requirements from assumptions. Do not substitute an agent's current tactic or the next failing check for the user's goal.
+
+Apply clear user changes to affected work and record their source. Preserve compatible work. Resolve consequential ambiguity before dependent implementation while continuing independent authorized work. Use project-inception when project-level goals or boundaries need substantial definition, not for routine implementation choices.
 
 ## Keep one owner per fact
 
-- `PLAN.md` owns stable goals, scope, boundaries, phases, and success conditions.
-- `DECISIONS.md` owns choices future work must preserve. It does not record task
-  completion.
-- `STATUS.md` is a snapshot of the project and current batch. Replace completed
-  batch detail; never append a diary or test history.
-- `TESTING.md` owns stable commands, environments, gates, and evidence meaning.
-  Exact run results belong in contracts or evidence artifacts.
-- Stable discoveries, behavior, architecture, and compatibility limits belong
-  in the smallest owning factual document, usually under `docs/`.
+In the standard layout, project files live under `.agents/`:
 
-Read [the artifact contract](references/artifact-contract.md) when creating,
-adopting, repairing, splitting, or shrinking the standard files.
+- `PLAN.md` owns the agreed project outcome, scope, boundaries, phases, and success conditions.
+- `DECISIONS.md` owns durable project choices and their reasons.
+- `STATUS.md` owns verified overall capability, active-task links, integration blockers, and the coordinator's next action. Keep a single current batch here when there is only one task.
+- `TESTING.md` owns repeatable checks and evidence standards. Exact results live in evidence artifacts.
+- `.agents/work/<task-slug>.md`, when needed, owns that task's request, acceptance checks, scope, owner, dependencies, current state, evidence links, and next action. Reference project constraints instead of copying them. Use work-ledger for its Markdown template when available.
 
-Use the `clear-technical-writing` skill when writing or revising continuity
-records and their owning technical documentation. Its clarity rules must not
-weaken evidence, status, requirements, or exact identifiers.
+Keep established behavior and architecture in their owning factual documentation. Promote a task decision that becomes project-wide to its project owner and leave a link. Do not mirror task detail in project status or load unrelated ledgers during resume.
 
-## Run verified batches
+Read [the artifact contract](references/artifact-contract.md) when adopting, changing, or validating the standard layout. Preserve existing records rather than creating a parallel system.
 
-When the user or repository authorizes autonomous commits, repeat:
+## Coordinate ownership
 
-1. Select one logical, independently reviewable result from `Next action`.
-   Name the behavior owner and existing interface before adding code. The next
-   missing symbol, failing assertion, or trace event chooses what to inspect;
-   it does not automatically define the module or commit boundary.
-2. Size the batch around one owner and observable result. Group a small family
-   of coupled functions when they share state, evidence, and verification and
-   intermediate commits add no review value. Split work when owners, lifetimes,
-   risk, or proof differ.
-3. Implement the related changes and update their owning docs or decisions.
-   Reuse or deepen an existing owner instead of adding a parallel special case.
-4. Use focused checks while iterating. Run broader required gates once the
-   batch is stable, and rerun them only when later edits could invalidate them.
-5. Replace `STATUS.md` with the resulting current state and one next action.
-6. Review the diff, stage only the batch, and commit it after required checks
-   pass. Use the `git-delivery` workflow when it is available so repository
-   subject style and staged-file ownership remain intact.
-7. Confirm unrelated and concurrently created work remains untouched, then
-   begin the next batch.
+Assign one writer per shared record, not one writer for all work. Independent task leads may maintain separate ledgers. The project coordinator maintains shared project status and integration priorities. For solo or standalone work, the responsible agent fills these roles. Record ownership transfers at handoff or authorized resume; an old timestamp does not establish abandonment.
 
-Without commit authority, stop after verified changes and record their
-uncommitted state. A partial result may be committed only when it is useful and
-verified on its own, with its limits documented.
+Give workers the relevant goal, task, owned scope, dependencies, deliverable, acceptance evidence, and stopping condition. Workers return evidence to their task owner unless explicitly assigned a separate record. Do not require a ledger per agent, batch, or commit.
 
-## Resolve undocumented behavior efficiently
+Keep a runnable next action for each independent task and name its prerequisites. Project-level prioritization must not serialize independent work. Recheck shared files before writing and route conflicting ownership through the coordinator.
 
-When a compatibility, reverse-engineering, or startup batch stalls on unknown
-behavior, preserve the first failing boundary and climb this evidence ladder:
+## Deliver verified batches
 
-1. Retain a bounded trace or other reproducible artifact that names the exact
-   failing process, interface, status, and ordering. Reuse it until a specific
-   unanswered question requires another run.
-2. For a compiled owner, inspect a matching-symbol decompile before attaching a
-   debugger. Record the binary and symbol identity so a plausible but mismatched
-   decompile cannot become project fact.
-3. Read the smallest owning public implementation or adapter source available,
-   such as Wine, Proton, ReactOS, FEX, or the project's host layer. Prefer its
-   established seam over a local special case.
-4. Add one narrow diagnostic log, oracle, or differential fixture for one named
-   ambiguity. Decide before running it which observations distinguish the
-   competing explanations, then retain the result as evidence.
-5. Use a debugger only when the remaining question requires live state that the
-   retained artifact, decompile, source, and bounded experiment cannot expose.
+Choose a coherent result that advances task acceptance. Group coupled behavior under its existing owner; split work when ownership, lifetime, risk, or proof differs. Implement and run focused checks, then applicable integration or project gates. Reuse evidence only while its identities and assumptions remain valid.
 
-Do not repeat debugger setup or broad trace collection without a new question.
-After each observation, update the hypothesis and choose the cheapest next
-artifact that can falsify it. Remove temporary diagnostics before delivery and
-move durable findings to their factual owner.
+Distinguish a worker's returned result, verified task output, integration, and accepted project behavior. A worker report or passing compilation does not establish integration or project completion. A blocked task does not block unrelated tasks.
 
-## Close a boundary
+Keep this loop independent of commit permission. When commits are authorized, use git-delivery if available, stage only inspected batch changes, and preserve concurrent work. Otherwise record the verified uncommitted result and continue within existing authority.
 
-Before pausing, compaction, handoff, or another batch:
+When progress stalls, retain the failing boundary and choose the cheapest new observation that can resolve it. Use reverse-engineering or oracle-lab for their specialized methods when relevant. Do not repeat broad collection without a new question.
 
-1. Move durable facts and exact evidence out of `STATUS.md` to their owners.
-2. Leave one current batch, one next action, current blockers, and only the
-   latest evidence needed to resume correctly.
-3. Resolve `scripts/continuity.ts` relative to this file. Run it with Bun,
-   passing `validate`, `--project-root`, and the absolute repository root.
+## Close and resume safely
 
-Fix structural validation errors before starting another batch. Treat
-compactness warnings as prompts to remove stale, repeated, or misplaced detail,
-not as hard limits. Do not normalize a warning that repeats until it stops being
-useful: when the current batch touches that record, move historical detail to
-its owner and restore a readable current snapshot. Keep detail the user or
-project still needs. If context quality drops, preserve safe partial work and
-close this boundary early.
+After a meaningful result or scope change, and before handoff or compaction, refresh the affected task's state, evidence, blockers, ownership, and next action. Update project status when overall capability, coordination, or integration changes. Replace stale snapshots rather than appending a diary.
+
+Complete a task only when its acceptance checks and required integration are satisfied. Record accepted exceptions and their authority. Complete the project only against project success conditions. Retain completed ledgers when useful without keeping their detail in the normal resume path.
+
+When using the standard project records, resolve `scripts/continuity.ts` from this skill and run `validate --project-root <absolute-root>` with Bun. Fix structural errors in records required for the current work. For a standalone task or another convention, use its checks without bootstrapping unrelated project files. Structural validation does not prove truthful progress or accepted behavior. Compactness warnings prompt review, never deletion of necessary intent or evidence.

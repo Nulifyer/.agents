@@ -13,8 +13,9 @@ Read the repository-root \`AGENTS.md\` first, then use this order:
 
 1. \`PLAN.md\` for the agreed goal, scope, boundaries, and phases.
 2. \`DECISIONS.md\` for binding choices and unresolved questions.
-3. \`STATUS.md\` for current project state, current batch, and the next action.
+3. \`STATUS.md\` for verified project state, current batch or active-task links, and the coordinator's next action.
 4. \`TESTING.md\` for commands and evidence standards.
+5. Only the task records relevant to the current work.
 
 ## Maintenance rules
 
@@ -24,17 +25,21 @@ Read the repository-root \`AGENTS.md\` first, then use this order:
 - Put stable discoveries and facts under the repository's documentation convention, usually \`docs/\`.
 - Keep exact run results in contracts or evidence artifacts, not \`STATUS.md\` or \`TESTING.md\`.
 - Preserve user-added sections and notes.
-- Resolve every continuity validation error before another batch.
+- Resolve structural errors in records required for the current work.
+- Keep a simple task in STATUS.md. For independent workstreams, replace Current batch and In progress with Active tasks containing record links and owners. Each task owns its next action.
+- Use optional work ledgers for substantial independently resumable outcomes, not one per agent, batch, or commit. Reuse existing trackers.
+- Give each writable record one owner and keep project-wide decisions in DECISIONS.md.
+- Apply user steering to affected acceptance checks and preserve compatible work.
 
 ## Delivery loop
 
-When autonomous commits are authorized: address one logical result, update its owning records, validate and test it, review and stage only that batch, commit it, then repeat from the single next action.
+Address one logical result, update its owning records, and run affected checks. When commits are authorized, inspect and stage only that batch, then commit it. Otherwise record the verified uncommitted result and continue within existing authority. Distinguish returned work, verified task output, integration, and project acceptance.
 `,
 	"PLAN.md": `# Project plan
 
 ## Goal
 
-Describe the durable end state.
+Describe the durable end state. Record the user ask and its source, distinguishing confirmed requirements from assumptions.
 
 ## Success conditions
 
@@ -104,7 +109,7 @@ Name the logical result currently being built.
 
 ## In progress
 
-- Record work that is actually underway.
+- Record work that is actually underway, with its owner and prerequisites.
 
 ## Next action
 
@@ -156,7 +161,7 @@ Add durable testing notes that do not fit a standard section.
 
 const AGENTS_SECTION = `## Project continuity
 
-For long-running work, read \`.agents/README.md\` and keep its indexed files current. Use \`project-continuity\` when resuming, closing a verified batch, recovering after compaction, or preparing a handoff. When autonomous commits are authorized, repeat one logical batch: implement and update owning records, validate and test, stage only that batch, commit, then continue from one next action.
+For substantial work, read \`.agents/README.md\` and only the relevant task records. Use \`project-continuity\` to preserve user intent, verified progress, and coordination across sessions or independent tasks. Project status owns coordination priorities; each independent task owns its next action and acceptance evidence. Do not create ledgers for routine one-off work or every worker. Deliver verified logical batches regardless of commit permission. Stage and commit only inspected batch changes when authorized; otherwise preserve verified uncommitted work and continue within existing authority.
 `;
 
 function projectRootFromArgs(args: readonly string[]): string {
