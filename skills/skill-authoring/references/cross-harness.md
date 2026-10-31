@@ -72,14 +72,14 @@ Other harnesses may also discover `.agents/skills`, but they are outside this co
 
 ## Validation
 
-Use the cheapest checks that support the compatibility claim:
+Use the cheapest checks that support a new or changed compatibility claim. Reuse still-applicable evidence for unaffected behavior; do not repeat host discovery for a wording edit that leaves the compatibility contract unchanged:
 
 1. Run `skills-ref validate <skill-directory>` when the reference validator is available.
    If a host-bundled validator rejects a field that the current open specification defines, confirm the field against the current specification and report the validator mismatch. Do not silently delete useful portable metadata to satisfy a stale validator.
 2. Install or copy the exact distribution unit into a temporary clean location. Confirm its scripts do not depend on the source repository, undeclared packages, or sibling paths.
 3. In each claimed harness, confirm discovery, one intended activation, one nearby non-activation, explicit invocation when relevant, and the intended permission behavior.
 4. Exercise important scripts with their declared runtime and missing-dependency path. Confirm model-visible output excludes secrets or protected values when that is part of the contract.
-5. Record what was actually tested. Passing in one harness or with one underlying model does not establish support in another.
+5. Record what was actually tested, separating package checks, discovery, manual walkthroughs, and executed behavior. Passing in one harness or with one underlying model does not establish support in another.
 
 For the primary profile:
 

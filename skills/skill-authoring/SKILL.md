@@ -19,7 +19,7 @@ Create or retain a skill when it addresses repeated work, an observed failure, o
 
 Preserve a broad activation rule when the user explicitly designates a skill as a standing global preference. `unslop` is the current exception: it applies to user-facing communication and prose people will read. Do not narrow it back to explicit writing requests during routine cleanup.
 
-Before creating a new skill, compare the candidate with nearby skills and global or project instructions. Prefer a focused revision when an existing owner already covers the behavior. Keep separate skills only when their activation conditions or operating contracts differ in practice.
+Before creating a new skill, compare the candidate with nearby skills and global or project instructions. Prefer a focused revision when an existing owner already covers the behavior. Keep separate skills when their activation conditions or operating contracts differ in practice. Shared subject matter or activation does not establish duplication: a workflow may use a tool skill, and project coordination may use task records. Compare the decisions, artifacts, and invariants each skill owns before merging them.
 
 When adapting another skill:
 
@@ -73,17 +73,16 @@ Do not create another top-level feature package. Do not copy portable instructio
 
 ## Validate
 
-Test the completed skill with:
+Choose checks for the behavior and packaging that changed. Reuse still-applicable evidence:
 
-- A realistic request that should activate it.
-- A nearby request that should not activate it.
-- A realistic task that exercises its important decisions.
-- Direct tests for scripts, dependencies, outputs, and failure behavior.
-- A clean installation of the actual distribution unit when the skill contains scripts, external dependencies, sibling references, or host-specific metadata.
-- For a language or style skill, several representative outputs whose voice, rhythm, register, and forbidden habits can be judged without requiring exact wording.
+- For a new skill or changed routing, try an intended request and a nearby exclusion.
+- Exercise changed decisions with a realistic task.
+- Run new or changed scripts and affected failure paths.
+- Check a clean installation when the distribution unit, packaged file set, dependencies, paths, or host metadata change.
+- For language or style changes, review representative outputs without requiring exact wording.
 
-For cross-harness work, validate the standard package first, then test discovery and invocation in each claimed target harness. A field being ignored without error does not prove that it enforced the intended behavior.
+For a new or changed compatibility claim, validate the standard package, check current primary documentation, and test discovery and invocation in each claimed target harness that is available. Preserve the existing Codex, Copilot, and OpenCode compatibility target. When a host is absent, record that only its package shape and documentation contract were verified. A targeted edit does not establish a new compatibility claim.
 
-For this collection, a portability claim means Codex, Copilot, and OpenCode discovery has been checked against their current primary documentation. Run an available host directly; when a host is absent, record that only its package shape and documentation contract were verified.
+Distinguish package checks, host discovery, manual walkthroughs, and executed model behavior. Report which hosts and checks actually ran. A field being ignored without error does not prove enforcement; token savings or self-authored examples alone do not establish better behavior.
 
-Judge whether the skill changed the model's decisions and produced the intended observable result. For an operational skill, test decisions and actions. For a language or style skill, language is observable behavior: review several outputs for the intended voice while preserving their meaning. Do not require exact generated sentences, headings, or incidental wording unless the interface requires them. Prune instructions that testing does not justify.
+Judge whether the skill changed the model's decisions and produced the intended observable result. For an operational skill, test decisions and actions. For a language or style skill, language is observable behavior: review several outputs for the intended voice while preserving their meaning. Do not require exact generated sentences, headings, or incidental wording unless the interface requires them. Remove instructions shown to be redundant, ineffective, or outside scope. A passing example does not establish that an unexercised safeguard is unnecessary.
