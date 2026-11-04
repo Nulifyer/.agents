@@ -5,11 +5,15 @@ description: Use when building, reshaping, or auditing frontend UI, layouts, sty
 
 # Frontend design
 
-<!-- Modified 2026-11-03: synthesized subject-led design and concrete UI review rules. -->
-
 ## Establish direction
 
-Inspect the brief, audience, primary task, nearby screens, shared components, and design tokens. Identify what already helps users and preserve it. Keep the product's visual language unless a redesign is requested. For an audit, produce findings without editing the UI unless fixes are requested.
+Start from the user story, even when the brief is informal. Identify the user, what brings them here, their desired outcome, why it matters, and the success condition. Give each screen a clear purpose within that story.
+
+Map the workflow before choosing the layout: what the user needs to know, the decisions and actions in order, and the result. Include feedback and recovery where the task can fail. Derive content, controls, navigation, and visual priority from that flow. Choose screen boundaries around coherent user decisions.
+
+For "invite a teammate," lead with the recipient and necessary access choices, then sending and visible confirmation. Make pending invitations and failed-send recovery easy to find.
+
+Inspect nearby screens, shared components, and design tokens. Identify what already helps users and preserve it. Keep the product's visual language unless a redesign is requested. For an audit, produce findings without editing the UI unless fixes are requested.
 
 For new visual identities, derive choices from the subject's materials, imagery, and vocabulary. Spend boldness in one memorable place; keep its surroundings disciplined. Open with what best expresses the subject: a headline, image, live demo, or useful interaction.
 
@@ -51,7 +55,7 @@ Say what actions do: "Save changes," not "Submit." Keep vocabulary consistent: "
 
 ## Verify and refine
 
-Inspect the rendered result with available, permitted tools. Use realistic content and exercise the primary task through completion and recovery. Check the following where relevant:
+Inspect the rendered result with available, permitted tools. Use realistic content and walk the user story from entry through completion and recovery. Check that each screen makes its purpose, next action, and result clear. Check the following where relevant:
 
 - Resize through narrow, intermediate, and wide layouts. Check larger text, keyboards, fixed elements, and open panels for lost content, collisions, and sudden layout jumps.
 - Preserve identifying text when truncating paths or titles. Check long-to-short updates, resizing in both directions, and expanded/collapsed variants. Confirm apparent screenshot clipping at native resolution.
