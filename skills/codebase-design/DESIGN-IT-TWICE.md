@@ -1,8 +1,10 @@
-# Design It Twice
+# Design it twice
 
 When the user wants to explore alternative interfaces for a chosen deepening candidate, use this parallel sub-agent pattern. Based on "Design It Twice" (Ousterhout): your first idea is unlikely to be the best.
 
 Uses the vocabulary in [SKILL.md](SKILL.md): **module**, **interface**, **seam**, **adapter**, **leverage**.
+
+Every candidate must meet the actual requirements and the ownership rules in [SKILL.md](SKILL.md). Include keeping behaviour with its current owner when separate ownership is not justified. Do not invent consumers or extension points to make an alternative look useful. Use parallel agents only when delegation is authorized and supported by the host.
 
 ## Process
 
@@ -23,11 +25,11 @@ Spawn 3+ sub-agents in parallel. Each must produce a **radically different** int
 Prompt each sub-agent with a separate technical brief (file paths, coupling details, dependency category from [DEEPENING.md](DEEPENING.md), what sits behind the seam). The brief is independent of the user-facing problem-space explanation in Step 1. Give each agent a different design constraint:
 
 - Agent 1: "Minimize the interface: aim for 1–3 entry points max. Maximise leverage per entry point."
-- Agent 2: "Maximise flexibility: support many use cases and extension."
+- Agent 2: "Support the concrete required callers with the least special-case logic. Add extension points only for an actual contract or substitution need."
 - Agent 3: "Optimise for the most common caller: make the default case trivial."
-- Agent 4 (if applicable): "Design around ports & adapters for cross-seam dependencies."
+- Agent 4 (if applicable): "Explore another placement for the integration seam. Justify each abstract interface and adapter against an actual contract or substitution need."
 
-Include both [SKILL.md](SKILL.md) vocabulary and CONTEXT.md vocabulary in the brief so each sub-agent names things consistently with the architecture language and the project's domain language.
+Include the ownership rules and vocabulary from [SKILL.md](SKILL.md) in each brief. Include relevant domain vocabulary from the repository's existing documentation, such as CONTEXT.md when present.
 
 Each sub-agent outputs:
 
@@ -39,6 +41,6 @@ Each sub-agent outputs:
 
 ### 3. Present and compare
 
-Present designs sequentially so the user can absorb each one, then compare them in prose. Contrast by **depth** (leverage at the interface), **locality** (where change concentrates), and **seam placement**.
+Reject candidates with unjustified ownership, hypothetical consumers, or unnecessary machinery. Present the viable designs sequentially, then compare them in prose. Assess **depth**, **locality**, **seam placement**, and the code and concepts each design requires maintainers to keep.
 
 After comparing, give your own recommendation: which design you think is strongest and why. If elements from different designs would combine well, propose a hybrid. Be opinionated: the user wants a strong read, not a menu.
