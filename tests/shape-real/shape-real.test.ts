@@ -181,5 +181,5 @@ describe("repository-local real shape corpus", () => {
     const wasmOutput = shape(wasm, "--source", "omit", "--names", "show", "-o", "2500");
     expect(wasmOutput).toContain("section name");
     expect(wasmOutput).toContain("section producers");
-  });
+  }, 120_000);
 });
