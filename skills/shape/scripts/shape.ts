@@ -195,7 +195,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 }
 
 if (import.meta.main) {
-  main().catch((error: unknown) => {
+  await main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });

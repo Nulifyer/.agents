@@ -190,8 +190,8 @@ export const double = (value: number): number => value * 2;
   });
 
   test("rejects unsupported files and conflicting focus", async () => {
-    expect(shapeSource("notes.txt", "hello")).rejects.toThrow("Unsupported source language");
-    expect(shapeSource("worker.ts", "function run() {}", { symbol: "run", line: 1 })).rejects.toThrow(
+    await expect(shapeSource("notes.txt", "hello")).rejects.toThrow("Unsupported source language");
+    await expect(shapeSource("worker.ts", "function run() {}", { symbol: "run", line: 1 })).rejects.toThrow(
       "only one of symbol, line, or match",
     );
   });
@@ -347,7 +347,7 @@ items.map(item => item.label === "Mapped send");
     roots.push(root);
     const path = join(root, "bundle.js");
     writeFileSync(path, Buffer.from([0x1f, 0x8b, 0x08, 0x00]));
-    expect(shapeTarget(path)).rejects.toThrow("[gzip]");
+    await expect(shapeTarget(path)).rejects.toThrow("[gzip]");
   });
 
   test("keeps audited language shapes compact and named", async () => {
@@ -497,10 +497,10 @@ items.map(item => item.label === "Mapped send");
     );
     expect(unicode.text).toContain("fn render [1]");
 
-    expect(shapeSource("cards.js", "function render() {}", { match: "(" })).rejects.toThrow(
+    await expect(shapeSource("cards.js", "function render() {}", { match: "(" })).rejects.toThrow(
       "Invalid --match regex: unclosed group",
     );
-    expect(
+    await expect(
       shapeSource("cards.js", "function render() {}", { match: "render", symbol: "render" }),
     ).rejects.toThrow("only one of symbol, line, or match");
   });
@@ -537,7 +537,7 @@ items.map(item => item.label === "Mapped send");
 
     const empty = mkdtempSync(join(tmpdir(), "code-shape-empty-match-dir-"));
     roots.push(empty);
-    expect(shapeTarget(empty, { match: "(" })).rejects.toThrow("Invalid --match regex: unclosed group");
+    await expect(shapeTarget(empty, { match: "(" })).rejects.toThrow("Invalid --match regex: unclosed group");
   });
 
   test("ranks matched files and symbol branches while preserving nesting", async () => {
