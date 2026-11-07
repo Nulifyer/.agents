@@ -30,7 +30,11 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: document-read-container-evidence
-          path: skills/document-read/.container/*.json
+          path: |
+            skills/document-read/.container/build-info.json
+            skills/document-read/.container/verification.json
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Sign in to GHCR
         if: ${{ inputs.publish }}
         env:
