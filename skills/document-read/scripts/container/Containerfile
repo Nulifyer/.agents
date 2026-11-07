@@ -1,0 +1,107 @@
+# scripts/container.ts resolves freshly pulled image digests for every build.
+ARG ALPINE_IMAGE=docker.io/library/alpine:latest
+ARG BUN_IMAGE=docker.io/oven/bun:alpine
+FROM ${BUN_IMAGE} AS bun
+
+FROM ${ALPINE_IMAGE} AS runtime-base
+RUN apk upgrade --no-cache --available && \
+    apk add --no-cache libstdc++ libgcc libgomp leptonica libjpeg-turbo libcrypto3 zlib \
+      ffmpeg poppler-utils font-dejavu
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+
+FROM runtime-base AS dependencies
+ARG XBERG_VERSION
+WORKDIR /opt/document-read
+RUN bun add --exact "@xberg-io/xberg@${XBERG_VERSION}"
+
+FROM runtime-base AS tools
+RUN apk add --no-cache build-base cmake ninja pkgconf linux-headers leptonica-dev openssl-dev libjpeg-turbo-dev zlib-dev
+COPY tesseract.tar.gz qpdf.tar.gz whisper.tar.gz llama.tar.gz /sources/
+RUN mkdir -p /sources/tesseract /sources/qpdf /sources/whisper /sources/llama && \
+    tar -xzf /sources/tesseract.tar.gz -C /sources/tesseract --strip-components=1 && \
+    tar -xzf /sources/qpdf.tar.gz -C /sources/qpdf --strip-components=1 && \
+    tar -xzf /sources/whisper.tar.gz -C /sources/whisper --strip-components=1 && \
+    tar -xzf /sources/llama.tar.gz -C /sources/llama --strip-components=1
+# ScrollView is a debugger display. Runtime SIMD detection and OpenMP stay enabled.
+# Avoid -march=native so one published image runs across different host CPUs.
+RUN cmake -S /sources/tesseract -B /build/tesseract -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DBUILD_SHARED_LIBS=ON -DBUILD_TRAINING_TOOLS=OFF -DBUILD_TESTS=OFF \
+      -DGRAPHICS_DISABLED=ON -DENABLE_NATIVE=OFF -DOPENMP_BUILD=ON \
+      -DDISABLE_CURL=ON -DDISABLE_ARCHIVE=ON && \
+    cmake --build /build/tesseract --parallel 4 && \
+    DESTDIR=/installed cmake --install /build/tesseract --strip
+RUN cmake -S /sources/qpdf -B /build/qpdf -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+      -DBUILD_SHARED_LIBS=ON -DBUILD_STATIC_LIBS=OFF \
+      -DBUILD_DOC=OFF -DINSTALL_MANUAL=OFF -DINSTALL_EXAMPLES=OFF \
+      -DUSE_IMPLICIT_CRYPTO=OFF -DREQUIRE_CRYPTO_OPENSSL=ON && \
+    cmake --build /build/qpdf --target qpdf fix-qdf zlib-flate --parallel 4 && \
+    DESTDIR=/installed cmake --install /build/qpdf --strip
+# Keep each project's ggml libraries private; their ABIs can differ.
+# CPU variants are selected at runtime instead of specializing for the builder.
+RUN cmake -S /sources/whisper -B /build/whisper -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+      -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN/../lib' \
+      -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
+      -DGGML_OPENMP=ON -DGGML_CCACHE=OFF -DWHISPER_CURL=OFF \
+      -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF && \
+    cmake --build /build/whisper --parallel 4 && \
+    mkdir -p /installed/opt/whisper/bin /installed/opt/whisper/lib && \
+    cp /build/whisper/bin/whisper-cli /installed/opt/whisper/bin/ && \
+    find /build/whisper -name '*.so*' -exec cp -P '{}' /installed/opt/whisper/lib/ ';' && \
+    strip /installed/opt/whisper/bin/* /installed/opt/whisper/lib/*.so && \
+    mv /installed/opt/whisper/lib/libggml-cpu*.so /installed/opt/whisper/bin/
+RUN cmake -S /sources/llama -B /build/llama -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+      -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON '-DCMAKE_INSTALL_RPATH=$ORIGIN/../lib' \
+      -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON \
+      -DGGML_OPENMP=ON -DGGML_CCACHE=OFF -DLLAMA_OPENSSL=OFF \
+      -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_APP=OFF \
+      -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=ON && \
+    cmake --build /build/llama --parallel 4 && \
+    mkdir -p /installed/opt/llama/bin /installed/opt/llama/lib && \
+    cp /build/llama/bin/llama-mtmd-cli /installed/opt/llama/bin/ && \
+    find /build/llama -name '*.so*' -exec cp -P '{}' /installed/opt/llama/lib/ ';' && \
+    strip /installed/opt/llama/bin/* /installed/opt/llama/lib/*.so && \
+    mv /installed/opt/llama/lib/libggml-cpu*.so /installed/opt/llama/bin/
+# Ship executables, shared libraries and runtime configuration only.
+RUN rm -rf /installed/usr/local/include /installed/usr/local/lib/cmake \
+      /installed/usr/local/lib/pkgconfig /installed/usr/local/share/man \
+      /installed/usr/local/share/doc /installed/usr/local/share/qpdf
+RUN mkdir -p /installed/usr/local/share/licenses/document-read && \
+    for project in tesseract qpdf whisper llama; do \
+      mkdir -p "/installed/usr/local/share/licenses/document-read/$project"; \
+      find "/sources/$project" -maxdepth 1 -type f \
+        \( -iname 'license*' -o -iname 'notice*' -o -iname 'copying*' \) \
+        -exec cp '{}' "/installed/usr/local/share/licenses/document-read/$project/" ';'; \
+    done
+
+FROM runtime-base
+ARG TESSERACT_VERSION
+ARG QPDF_VERSION
+ARG XBERG_VERSION
+WORKDIR /opt/document-read
+COPY --from=dependencies /opt/document-read/ ./
+COPY --from=tools /installed/usr/local/ /usr/local/
+COPY --from=tools /installed/opt/ /opt/
+COPY whisper.bin vision.gguf projection.gguf /opt/document-read/models/
+COPY whisper-model-LICENSE.txt vision-model-README.md fixtures/LICENSE-APACHE-2.0.txt /usr/local/share/licenses/document-read/models/
+COPY eng.traineddata /usr/local/share/tessdata/eng.traineddata
+COPY build-info.json /usr/local/share/document-read/build-info.json
+COPY extract.mjs watchdog.mjs ./
+COPY finish-build.mjs verify.mjs ./
+COPY fixtures/ ./fixtures/
+ENV HF_HUB_OFFLINE=1 TOKENIZERS_PARALLELISM=false HOME=/tmp \
+    TESSDATA_PREFIX=/usr/local/share/tessdata
+ENV TESSERACT_VERSION=${TESSERACT_VERSION}
+LABEL org.opencontainers.image.source="https://github.com/Nulifyer/.agents"
+# Fail a stale build instead of publishing it. The downloaded indexes are discarded.
+RUN apk update && \
+    outdated="$(apk -q version -l '<')" && \
+    if [ -n "$outdated" ]; then echo "$outdated"; exit 1; fi && \
+    bun --no-install finish-build.mjs && \
+    test "$(tesseract --version 2>/dev/null | head -n 1)" = "tesseract ${TESSERACT_VERSION}" && \
+    test "$(qpdf --version | head -n 1)" = "qpdf version ${QPDF_VERSION}" && \
+    rm -f /var/cache/apk/*
+ENTRYPOINT ["bun", "--no-install", "/opt/document-read/extract.mjs"]

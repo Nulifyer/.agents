@@ -35,7 +35,8 @@ Codex, GitHub Copilot, and OpenCode. Each skill lives in `skills/<name>/`, with 
 
 ## Setup
 
-1. Install Bun and ripgrep. Install Git if you plan to clone the repository.
+1. Install Bun, ripgrep, and either Docker or Podman. Start the container runtime
+   if it requires a service. Install Git if you plan to clone the repository.
 2. Clone [nulifyer/.agents](https://github.com/nulifyer/.agents) into `~/.agents`:
 
    ```bash
@@ -48,24 +49,55 @@ Codex, GitHub Copilot, and OpenCode. Each skill lives in `skills/<name>/`, with 
 3. Run setup from that directory:
 
    ```bash
-   bun run setup
+   bun setup.ts
    ```
 
-Setup installs the locked package dependencies and verifies ripgrep, the
-Tree-sitter runtime, and all 40 source grammars and queries. The first install
-needs network access. The packages include prebuilt WASM files, so no global
-Tree-sitter installation, WASM compiler, or manual grammar downloads are needed.
+The Bun script calls each executable skill's own setup. Shape installs its
+locked parser dependencies and verifies ripgrep and all 40 Tree-sitter grammars
+and queries. YouTube transcript installs and checks its caption client.
+Document-read prepares its extraction container, reusing a local image or
+pulling the GHCR package, then verifies offline extraction and automatic
+container removal. First installation or image pulls need network access.
+No global Tree-sitter installation or WASM compiler is needed.
 
-Individual skills list any additional tools they require in their `SKILL.md`
-and references. For a standalone copy of `skills/shape`, run `bun run setup`
-from that skill's directory. Use `bun run check:setup` there to check an existing
-installation without downloading packages.
+Before the container package's initial publication, build its image locally,
+then rerun setup:
+
+```bash
+bun run --cwd skills/document-read container:build
+bun setup.ts
+```
+
+Builds resolve current stable tool releases, pull fresh bases, upgrade Alpine
+packages, and run offline checks. Read the [container setup reference](skills/document-read/references/container.md)
+for image selection, build options, and qualification limits. Document-read
+uses one complete image for document extraction, OCR, local Whisper
+transcription and opt-in SmolVLM2 picture descriptions. OCR, Office parsing,
+media tools and model files stay inside the image; its host requirements are
+Bun and Docker or Podman. YouTube URLs use the YouTube transcript skill to
+retrieve captions online; local audio and video files use document-read offline.
+
+Each executable skill owns its package dependencies and setup commands. A copy
+of one skill directory works independently of the repository. Run
+`bun run setup` or `bun run check:setup` from that directory. Skills declare
+additional system tools in their `SKILL.md` and references.
+
+Use `bun setup.ts --check` to check all existing installations without
+downloads. Pass skill names to select only those setups, for example
+`bun setup.ts shape youtube-transcript`. The script also works when invoked
+from another directory.
 
 ## Development
 
-Run all code checks from the repository root:
+The root `package.json` and `bun.lock` contain only shared development tools.
+`tsconfig.json` and `biome.json` configure the collection-wide type and lint
+checks. Installed skills do not need these root files.
+
+After setting up the skills, install the development tools and run all code
+checks from the repository root:
 
 ```bash
+bun install --frozen-lockfile
 bun run check
 ```
 

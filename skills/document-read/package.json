@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-	"bin": {
-		"document-read": "./scripts/document-read.ts"
-	},
-	"scripts": {
-		"test": "bun test scripts/document-read.test.ts"
-	}
+  "bin": {
+    "document-read": "./scripts/document-read.ts"
+  },
+  "scripts": {
+    "setup": "bun --no-install scripts/container.ts setup",
+    "check:setup": "bun --no-install scripts/container.ts check",
+    "container:build": "bun --no-install scripts/container.ts build",
+    "test": "bun test scripts"
+  }
 }

@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@nulifyer/youtube-transcript",
+      "dependencies": {
+        "@hallelx/youtube-transcript": "0.2.0",
+      },
+    },
+  },
+  "packages": {
+    "@hallelx/youtube-transcript": ["@hallelx/youtube-transcript@0.2.0", "", { "peerDependencies": { "undici": ">=5" }, "optionalPeers": ["undici"], "bin": { "youtube-transcript": "dist/cli.js" } }, "sha512-xaUiACZo9S4YHXCqr1XIhOc3vgI2sjQf+FnFkUvxbv84J1GicC4RrjUiVWmQlMI8hJW4ztyqDZFcalXquPRpjg=="],
+  }
+}

@@ -129,6 +129,9 @@ dist
 # Local agent work ledgers
 /.agents/work/
 
+# Local container build and verification reports
+/skills/document-read/.container/
+
 # omarchy os skills
 skills/diagnose-crash
 skills/omarchy

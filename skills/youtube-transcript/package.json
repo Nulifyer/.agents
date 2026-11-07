@@ -7,6 +7,8 @@
     "youtube-transcript": "./scripts/youtube-transcript.ts"
   },
   "scripts": {
+    "setup": "bun install --frozen-lockfile && bun run check:setup",
+    "check:setup": "bun --no-install scripts/check-setup.ts",
     "test": "bun test scripts/youtube-transcript.test.ts"
   },
   "dependencies": {

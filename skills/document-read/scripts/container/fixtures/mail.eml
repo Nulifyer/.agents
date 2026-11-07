@@ -1,0 +1,7 @@
+From: fixture@example.test
+To: reader@example.test
+Subject: Container qualification
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+A local email survives offline extraction.

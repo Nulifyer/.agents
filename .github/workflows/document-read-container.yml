@@ -1,0 +1,41 @@
+name: Document-read container
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the checked experimental image to GHCR
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: latest
+      - name: Select package name
+        run: echo "DOCUMENT_READ_CONTAINER_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/document-read:experimental" >> "$GITHUB_ENV"
+      - name: Build current dependencies and verify offline extraction
+        run: bun run --cwd skills/document-read container:build --runtime docker
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: document-read-container-evidence
+          path: skills/document-read/.container/*.json
+      - name: Sign in to GHCR
+        if: ${{ inputs.publish }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish checked image
+        if: ${{ inputs.publish }}
+        run: docker push "$DOCUMENT_READ_CONTAINER_IMAGE"

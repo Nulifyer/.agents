@@ -2,30 +2,40 @@
 
 # Format routing
 
-The wrapper chooses an adapter and a pinned Python environment from the file extension and requested capabilities. `auto` is the normal choice. MarkItDown installs only the extras needed for the routed format, excluding its cloud, audio, video, and unrelated document integrations. The current Docling CLI imports its standard model stack even for non-PDF formats, so those fallback profiles use Docling's `standard` bundle; picture-description and ASR/video dependencies remain isolated. PDFs use a smaller tested profile with only their conversion, local-model, and optional OCR dependencies.
+All conversion runs in the prepared container. Unsupported or malformed inputs fail with a converter diagnostic. There is no host conversion fallback.
 
-| Input | Default path | Escalate when |
-|---|---|---|
-| PDF | Docling, automatic OCR, referenced images, Markdown + JSON | Use `--ocr force` for a scan with weak text; `--pages` for a narrow rerun; `--images describe` only when figures themselves must be interpreted |
-| DOCX, PPTX | MarkItDown | Use `--images extract` when embedded media or layout evidence matters; this routes through Docling |
-| XLSX | `shape --as data` before conversion | Convert only when cell content is needed; query structured data directly when practical |
-| DOC, PPT, XLS | Docling | LibreOffice must be installed for legacy Office conversion |
-| ODT, ODP, ODS | Docling | Inspect extracted images only when they are evidence |
-| EML, MSG, EPUB | MarkItDown, with Docling fallback where supported | Force Docling only when MarkItDown loses required structure |
-| Document image | Native image inspection for one ordinary image; Docling when OCR or document structure is needed | Use `--ocr force` for a full-page scan |
-| Audio | Docling ASR profile | This is a separate, heavier environment; increase the timeout for long recordings |
-| Video | Docling video/ASR profile | Requires media tooling and may require a compiler; extract only when the user needs transcript content |
-| Unknown binary | Docling, then MarkItDown | Verify the converter warning and output rather than assuming support |
+| Input | Processing route | Escalate when |
+| --- | --- | --- |
+| YouTube URL | Use the `youtube-transcript` skill to retrieve captions online | If captions are unavailable, report that result; local transcription requires an audio or video file |
+| PDF | Xberg native text, Tesseract OCR, structured JSON and referenced images | Use `--ocr force` for a weak text layer, `--pages` for a narrow rerun, and `--images describe` for generated captions |
+| DOCX, PPTX, XLSX | Native Office parsing | Use `--images extract` for embedded media; inspect spreadsheet structure with `shape` before extracting cell content |
+| DOC, PPT, XLS | Native legacy Office parsing | Check warnings and extracted text; no host LibreOffice installation is required |
+| ODT, ODP, ODS | Native OpenDocument parsing | Extract and inspect pictures when they are evidence |
+| EML, MSG, EPUB, RTF | Native parsing | Check message fields, book headings and warnings when exact structure matters |
+| Document scan | Tesseract with baked English OCR data | Use the host's image-inspection capability for an ordinary standalone image |
+| Audio | Whisper tiny with automatic language detection | Increase the timeout for longer recordings and verify precise wording against the recording |
+| Video | FFmpeg audio decoding, then Whisper | This returns a transcript, not a visual account of the frames |
+
+The same image includes Whisper tiny for local transcription and SmolVLM2 256M for opt-in picture descriptions. Its captions can omit details or invent content. Prefer direct image inspection for precision and Tesseract OCR for text extraction. All model files are baked into the image; conversion has no network access.
+
+From this skill's directory, use the same command for each local operation:
+
+```bash
+bun scripts/document-read.ts /path/to/recording.wav
+bun scripts/document-read.ts /path/to/video.mp4
+bun scripts/document-read.ts /path/to/report.pdf --images describe
+```
 
 ## Option semantics
 
-- `--ocr auto` first converts PDF and document images without OCR, then reruns with full-page OCR only when the text yield is clearly insufficient. This avoids OCR model startup for ordinary born-digital PDFs.
-- `--ocr off` avoids OCR. Use it for known born-digital PDFs when startup cost matters.
-- `--ocr force` requests full-page OCR and disables fallback to converters without OCR.
-- `--images auto` extracts referenced PDF images but leaves images out of ordinary Office/email conversions. Extraction writes files; it does not place pixels in model context.
-- `--images none` keeps placeholders only.
-- `--images extract` returns local paths and Docling picture metadata where available.
-- `--images describe` asks Docling's picture-description model to enrich the conversion. It is opt-in because it adds dependencies and inference cost.
-- `--pages START-END` is one-based and inclusive. It requires Docling.
+- `--ocr auto` uses native text where possible and OCR for weak pages and embedded image text. `--ocr off` disables OCR. `--ocr force` renders each selected PDF page and OCRs the full page, retaining the original native text in structured JSON.
+- `--images auto` saves PDF pictures and omits image files for other formats. `--images none` returns placeholders instead of image files. OCR is controlled separately.
+- `--images extract` saves image files and returns their page and bounding-box provenance where the source supports it.
+- `--images describe` also adds generated captions to Markdown and JSON. It runs the baked local vision model and takes longer than extraction alone.
+- `--pages START-END` is one-based and inclusive, applies only to PDFs, and preserves original source page numbers. Out-of-range requests fail.
+- `--max-chars` bounds the preview, not the Markdown artifact. Outline, picture and image-path summaries are also bounded; the JSON artifact retains the complete records.
+- `--timeout-ms` bounds the conversion job. Timeout or conversion failure removes its container and staging files. A failed refresh preserves the previous successful cache entry.
 
-Docling conversions retain Markdown for reading and lossless JSON for page, bounding-box, caption, and picture provenance. MarkItDown conversions retain Markdown only.
+Markdown supports semantic reading and search. Structured JSON retains native metadata, page content, tables, picture coordinates, generated captions and transcript segments. Image bytes live in separate files referenced by JSON. Consult the recorded coordinate frame before interpreting bounding boxes.
+
+The tested image targets Linux amd64 with Docker. Other architectures, Podman execution, and formats outside the qualification fixtures need their own checks before promising support. OCR uses English data; Whisper's multilingual tiny model and the small vision model have their own accuracy limits.
