@@ -33,6 +33,19 @@ Codex, GitHub Copilot, and OpenCode. Each skill lives in `skills/<name>/`, with 
 | [youtube-transcript](skills/youtube-transcript/SKILL.md) | Retrieve, search, and summarize public YouTube captions. |
 | [zig-systems-development](skills/zig-systems-development/SKILL.md) | Develop and debug Zig systems code. |
 
+## Development workflows
+
+`active-worker-research` reviews an active implementation stream and researches
+the highest-value missing facts without becoming another code owner.
+`oracle-lab` defines repeatable black-box and differential experiments against a
+reference system. `reverse-engineering` owns artifact analysis and routes
+source-informed reconstruction through subsystem ownership and consumer
+validation. Its [analysis tools](skills/reverse-engineering/references/tools.md)
+export Ghidra code and instructions, search functions/strings, navigate calls
+and references, check PE/PDB identity, and recover embedded source-map files.
+Its optional case utility checks evidence identity and stale inputs. Clean-room
+methods are a separate study branch, used when requested.
+
 ## Setup
 
 1. Install Bun, ripgrep, and either Docker or Podman. Start the container runtime

@@ -135,3 +135,7 @@ dist
 # omarchy os skills
 skills/diagnose-crash
 skills/omarchy
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
