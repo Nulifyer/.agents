@@ -8,7 +8,6 @@ Codex, GitHub Copilot, and OpenCode. Each skill lives in `skills/<name>/`, with 
 
 | Skill | Summary |
 | --- | --- |
-| [active-worker-research](skills/active-worker-research/SKILL.md) | Research gaps and risks in active development without taking over implementation. |
 | [caveman](skills/caveman/SKILL.md) | Use a compressed writing style when explicitly requested. |
 | [clear-technical-writing](skills/clear-technical-writing/SKILL.md) | Make technical explanations and instructions easy to follow. |
 | [codebase-design](skills/codebase-design/SKILL.md) | Design module boundaries, interfaces, and testable architecture. |
@@ -29,14 +28,17 @@ Codex, GitHub Copilot, and OpenCode. Each skill lives in `skills/<name>/`, with 
 | [subagent-handoff](skills/subagent-handoff/SKILL.md) | Define delegated tasks and integrate agent results. |
 | [unslop](skills/unslop/SKILL.md) | Remove formulaic AI writing and use concrete language. |
 | [work-ledger](skills/work-ledger/SKILL.md) | Preserve repository task state across sessions and handoffs. |
+| [worker-supervision](skills/worker-supervision/SKILL.md) | Review ongoing agent work, resolve authorized feedback, and verify follow-through. |
 | [workflow-miner](skills/workflow-miner/SKILL.md) | Find reusable improvements in completed work and repeated corrections. |
 | [youtube-transcript](skills/youtube-transcript/SKILL.md) | Retrieve, search, and summarize public YouTube captions. |
 | [zig-systems-development](skills/zig-systems-development/SKILL.md) | Develop and debug Zig systems code. |
 
 ## Development workflows
 
-`active-worker-research` reviews an active implementation stream and researches
-the highest-value missing facts without becoming another code owner.
+`worker-supervision` reviews an active implementation stream, resolves authorized
+feedback with its worker, and checks follow-through without becoming another
+code owner. It uses available harness capabilities or supplied transcripts and
+repository evidence.
 `oracle-lab` defines repeatable black-box and differential experiments against a
 reference system. `reverse-engineering` owns artifact analysis and routes
 source-informed reconstruction through subsystem ownership and consumer
