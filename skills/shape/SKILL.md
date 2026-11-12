@@ -8,7 +8,7 @@ compatibility: Requires Bun. Source shaping also requires ripgrep and package de
 
 Inspect structure before reading broad content. The command reports its access boundary and returns compact names, kinds, nesting, and locators without returning payload values or source bodies.
 
-On a new installation, install Bun and ripgrep, then run `bun run setup` from this skill directory. This installs dependencies and verifies every Tree-sitter WASM grammar and query. No global Tree-sitter installation or WASM build tools are required. To check an existing installation without downloads, run `bun run check:setup`.
+On a new installation, install Bun and ripgrep, then run `bun run setup` from this skill directory. This installs dependencies and verifies every Tree-sitter WASM grammar and query. Setup skips dependency install scripts because Shape uses packaged WASM files, not native bindings. No global Tree-sitter installation or WASM build tools are required. To check an existing installation without downloads, run `bun run check:setup`.
 
 Resolve local targets from the caller's working directory, then run from this skill directory:
 
