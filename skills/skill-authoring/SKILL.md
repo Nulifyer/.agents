@@ -42,7 +42,7 @@ Examples carry unusual weight in a language or style skill. Preserve enough repr
 
 - `name` and `description` may remain in context every turn. Treat `description` as a routing rule, not a summary or capability list. State when the skill should load and add a nearby exclusion when it prevents likely misrouting.
 - `SKILL.md` loads after selection. Put what the skill changes about the agent's behavior here.
-- References load on demand. Move branch-specific detail out of `SKILL.md` and link it with the exact condition for reading it.
+- References load on demand, and an unread reference contributes nothing. Move detail out of `SKILL.md` when a minority of the skill's tasks take that branch and the agent can tell it is on the branch from the request or the artifact it is about to produce. Link it with that condition. Keep inline the rule that selects the branch, short defaults most tasks need, and anything whose reading condition would be a judgment made partway through the work. Decide by branch, not by size; when unsure, keep it inline.
 - In a language or style skill, style-bearing prose and examples are not disposable exposition. Keep enough in `SKILL.md` to prime the target voice even when an operational skill would move the same amount to a reference.
 - Every paragraph should tell the agent what to do, when to do it, or how to know it is done. Cut the rest.
 
@@ -77,6 +77,7 @@ Choose checks for the behavior and packaging that changed. Reuse still-applicabl
 
 - For a new skill or changed routing, try an intended request and a nearby exclusion.
 - Exercise changed decisions with a realistic task.
+- For a new or changed reference, confirm in a realistic task that the agent read it when its condition applied.
 - Run new or changed scripts and affected failure paths.
 - Check a clean installation when the distribution unit, packaged file set, dependencies, paths, or host metadata change.
 - For language or style changes, review representative outputs without requiring exact wording.
